@@ -62,6 +62,11 @@ def original_path(path, *, flatpak):
     return None
 
 
+def enabled_folders(settings):
+    disabled = {access_path(path) for path in settings.get_strv("disabled-custom-dirs")}
+    return [path for path in settings.get_strv("custom-dirs") if access_path(path) not in disabled]
+
+
 class CustomFolderCopyError(OSError):
     pass
 

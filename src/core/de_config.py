@@ -1,7 +1,7 @@
 import os, shutil, subprocess, json, glob
 from gi.repository import GLib
 from savedesktop.globals import *
-from savedesktop.core.custom_dirs import save_custom_folders
+from savedesktop.core.custom_dirs import enabled_folders, save_custom_folders
 from pathlib import Path
 from datetime import date
 
@@ -281,7 +281,7 @@ class Save:
 
         # Custom dirs
         if settings["enable-custom-dirs"]:
-            save_custom_folders(settings["custom-dirs"], Path("Custom_Dirs"), flatpak=flatpak)
+            save_custom_folders(enabled_folders(settings), Path("Custom_Dirs"), flatpak=flatpak)
 
         # DE configuration
         if environment:

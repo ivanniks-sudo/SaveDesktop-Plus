@@ -586,3 +586,63 @@ msgstr ""
 #~ "Вы хотите сохранить текущую конфигурацию (темы, значки, обои, все "
 #~ "настройки окружения рабочего стола, расширения и т.д.)? Save Desktop "
 #~ "поможет вам в этом всего в один клик."
+
+#: src/gui/custom_dirs_dialog.py
+msgid "Folder path"
+msgstr "Путь к папке"
+
+#: src/gui/custom_dirs_dialog.py
+msgid "Add path"
+msgstr "Добавить путь"
+
+#: src/gui/custom_dirs_dialog.py
+msgid "Use Ctrl+H in the folder chooser to show hidden folders."
+msgstr "Чтобы показать скрытые папки в диалоге выбора, нажмите Ctrl+H."
+
+#: src/gui/custom_dirs_dialog.py
+msgid "Enter an absolute folder path or a path starting with ~/."
+msgstr "Введите абсолютный путь к папке или путь, начинающийся с ~/."
+
+#: src/gui/custom_dirs_dialog.py
+msgid "Folder unavailable"
+msgstr "Папка недоступна"
+
+#: src/gui/custom_dirs_dialog.py
+msgid "Choose the folder in the file dialog to grant access. The path you entered is kept."
+msgstr "Выберите папку в диалоге, чтобы предоставить доступ. Введённый путь сохранится в поле."
+
+#: src/gui/custom_dirs_dialog.py
+msgid "Choose folder"
+msgstr "Выбрать папку"
+
+#: src/gui/custom_dirs_dialog.py
+msgid "The folder is missing or cannot be read."
+msgstr "Папка отсутствует или недоступна для чтения."
+
+#: src/gui/custom_dirs_dialog.py
+msgid "This folder is already in the list."
+msgstr "Эта папка уже есть в списке."
+
+#: src/gui/custom_dirs_dialog.py
+msgid "Include in backup"
+msgstr "Включить в резервную копию"
+
+#: src/gui/custom_dirs_dialog.py
+msgid "The original location is unavailable."
+msgstr "Не удалось определить исходное расположение."
+
+#: src/gui/custom_dirs_dialog.py
+msgid "Folder unavailable. Select it again to restore access, or exclude it from backup."
+msgstr "Папка недоступна. Выберите её заново или исключите из резервной копии."
+
+#: src/gui/custom_dirs_dialog.py
+msgid "The original location is unavailable. Backup uses the folder granted by Document Portal."
+msgstr "Не удалось определить исходное расположение. Для резервной копии используется папка, доступ к которой предоставил портал."
+
+#: src/gui/custom_dirs_dialog.py
+msgid "The selected folder has no local filesystem path."
+msgstr "У выбранной папки нет локального пути."
+
+#: src/gui/custom_dirs_dialog.py
+msgid "Could not select folder"
+msgstr "Не удалось выбрать папку"

@@ -57,6 +57,14 @@
 		  <default>[]</default>
 		  <summary>Selected custom directories</summary>
 		</key>
+	  <key name="disabled-custom-dirs" type="as">
+	    <default>[]</default>
+	    <summary>Custom directories excluded from backup</summary>
+	  </key>
+	  <key name="custom-dir-original-paths" type="a{ss}">
+	    <default>{}</default>
+	    <summary>Last known original locations of custom directories</summary>
+	  </key>
 	  <key name="enable-custom-dirs" type="b">
 	    <default>false</default>
 	    <summary>Enable/Disable custom directories</summary>

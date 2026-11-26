@@ -1,5 +1,6 @@
 import subprocess, re, os, json
 from savedesktop.globals import *
+from savedesktop.core.custom_dirs import enabled_folders
 
 # Check if the cloud drive folder uses GVFS or Rclone FS or if it is a Syncthing folder
 def check_fs(folder):
@@ -22,7 +23,7 @@ def create_savedesktop_json():
             "extensions": settings["save-extensions"],
             "bookmarks": settings["save-bookmarks"],
             "desktop": settings["save-desktop-folder"],
-            "custom-dirs": settings["custom-dirs"] if settings["enable-custom-dirs"] else [],
+            "custom-dirs": enabled_folders(settings) if settings["enable-custom-dirs"] else [],
             "flatpaks": settings["save-installed-flatpaks"],
             "disabled-flatpaks": settings["disabled-flatpak-apps-data"] if settings["save-installed-flatpaks"] else [],
             "flatpak-data": settings["save-flatpak-data"],
