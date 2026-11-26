@@ -3,6 +3,7 @@ from savedesktop.globals import *
 from savedesktop.core.password_store import PasswordStore
 from savedesktop.core.de_config import Save, Import
 from savedesktop.core.backup_input import prepare_backup
+from savedesktop.core.wallpaper import split_wallpaper
 
 TEMP_CACHE = f"{CACHE}/workspace"
 temp_file = f"{CACHE}/temp_file"
@@ -82,8 +83,12 @@ class Unpack:
                 os.chdir(root)
                 dump = Path("General/dconf-settings.ini") if Path("General").is_dir() else Path("dconf-settings.ini")
                 self._sanitize_dconf_dump(dump)
+                wallpaper = ""
+                if environment and environment["de_name"] == "Cinnamon":
+                    other, wallpaper = split_wallpaper(dump.read_text(encoding="utf-8"))
+                    dump.write_text(other, encoding="utf-8")
                 self._replace_home_in_files(".", home)
-                Import(options or {})
+                Import(options or {}, wallpaper)
         finally:
             os.chdir(previous)
             remove_temp_file()

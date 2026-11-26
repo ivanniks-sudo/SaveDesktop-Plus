@@ -8,6 +8,7 @@ core_sources = [ '__init__.py',
                 'periodic_saving.py',
                 'synchronization.py',
                 'synchronization_setup.py',
+                'wallpaper.py',
               ]
               
 install_data(core_sources, install_dir: moduledir / 'core')

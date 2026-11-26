@@ -1,7 +1,9 @@
 import os, shutil, subprocess, json, glob
 from gi.repository import GLib
 from savedesktop.globals import *
-from savedesktop.core.custom_dirs import enabled_folders, save_custom_folders
+from savedesktop.core.custom_dirs import enabled_folders, save_custom_folders, read_folder_metadata, validate_folder_plan
+from savedesktop.core.backup_input import restore_tar, restore_tree
+from savedesktop.core.wallpaper import save_wallpaper, restore_wallpaper
 from pathlib import Path
 from datetime import date
 
@@ -23,7 +25,10 @@ def safe_copy(src: str, dst: str):
 def safe_copytree(src: str, dst: str):
     if os.path.isdir(src):
         try:
-            shutil.copytree(src, dst, dirs_exist_ok=True, symlinks=True)
+            if Path.cwd().name.startswith("restore-"):
+                restore_tree(src, dst)
+            else:
+                shutil.copytree(src, dst, dirs_exist_ok=True, symlinks=True)
             print(f"[OK] Copied dir: {src} → {dst}")
         except Exception as e:
             print(f"[ERR] Dir copy failed {src} → {dst}: {e}")
@@ -49,18 +54,18 @@ def save_icons():
 def import_icons():
     if os.path.exists("General"):
         if os.path.exists("General/icon-themes.tgz"):
-            subprocess.run(["tar", "-xzf", "General/icon-themes.tgz", "-C", f"{home}/.local/share"])
+            restore_tar("General/icon-themes.tgz", home / ".local/share")
 
         if os.path.exists("General/icon-themes-legacy.tgz"):
-            subprocess.run(["tar", "-xzf", "General/icon-themes-legacy.tgz", "-C", home])
+            restore_tar("General/icon-themes-legacy.tgz", home)
 
         print("[OK] Importing icons")
     else:
         if os.path.exists("icon-themes.tgz"):
-            subprocess.run(["tar", "-xzf", "icon-themes.tgz", "-C", f"{home}/.local/share"])
+            restore_tar("icon-themes.tgz", home / ".local/share")
 
         if os.path.exists("icon-themes-legacy.tgz"):
-            subprocess.run(["tar", "-xzf", "icon-themes-legacy.tgz", "-C", home])
+            restore_tar("icon-themes-legacy.tgz", home)
 
         print("[OK] Importing icons")
 
@@ -92,7 +97,27 @@ def create_flatpak_list():
     print("[OK] Saving Flatpak app list")
 
 def create_flatpak_autostart():
-    os.system(f"cp {app_prefix}/savedesktop/core/flatpaks_installer.py {CACHE}/workspace")
+    workspace = Path(CACHE) / "workspace"
+    workspace.mkdir(exist_ok=True)
+    shutil.copy2(Path(app_prefix) / "savedesktop/core/flatpaks_installer.py", workspace)
+    shutil.copy2(Path(app_prefix) / "savedesktop/core/backup_input.py", workspace)
+    if (workspace / "Flatpak_Apps").exists():
+        shutil.rmtree(workspace / "Flatpak_Apps")
+    if Path("Flatpak_Apps").is_dir():
+        shutil.copytree("Flatpak_Apps", workspace / "Flatpak_Apps", symlinks=True)
+    for name in ("installed_flatpaks.sh", "installed_user_flatpaks.sh", "flatpak-apps-data.tgz", "app"):
+        target = workspace / name
+        if target.is_dir() and not target.is_symlink():
+            shutil.rmtree(target)
+        else:
+            target.unlink(missing_ok=True)
+        source = Path(name)
+        if source.is_symlink():
+            raise ValueError(f"Unexpected symbolic link: {name}")
+        if source.is_dir():
+            shutil.copytree(source, target, symlinks=True)
+        elif source.is_file():
+            shutil.copy2(source, target)
 
     # Create a JSON file with the user's preferences for Flatpak apps
     with open(f"{CACHE}/workspace/flatpak-prefs.json", "w") as fl:
@@ -143,20 +168,13 @@ def save_desktop_folder():
     print("[OK] Saving Desktop folder")
 
 def import_desktop_folder():
-    if os.path.exists("General"):
-        subprocess.run([
-            "tar", "-xzf", "General/desktop-folder.tgz",
-            "-C", str(desktop_dir.parent)
-        ])
-        safe_copytree("General/gvfs-metadata", f"{home}/.local/share/gvfs-metadata")
+    root = Path("General") if Path("General").is_dir() else Path(".")
+    archive = root / "desktop-folder.tgz"
+    if archive.is_file():
+        restore_tar(archive, desktop_dir.parent)
+        safe_copytree(root / "gvfs-metadata", home / ".local/share/gvfs-metadata")
         print("[OK] Restored Desktop folder")
-    else:
-        subprocess.run([
-            "tar", "-xzf", "desktop-folder.tgz",
-            "-C", str(desktop_dir.parent)
-        ])
-        safe_copytree("gvfs-metadata", f"{home}/.local/share/gvfs-metadata")
-        print("[OK] Restored Desktop folder")
+
 
 # ------------------------
 # GENERAL ITEMS (DATA MODEL)
@@ -279,9 +297,21 @@ class Save:
             if settings[item["key"]]:
                 item["save"]()
 
-        # Custom dirs
+        self.folders = []
         if settings["enable-custom-dirs"]:
-            save_custom_folders(enabled_folders(settings), Path("Custom_Dirs"), flatpak=flatpak)
+            self.folders = save_custom_folders(enabled_folders(settings), Path("Custom_Dirs"), flatpak=flatpak)
+            known_paths = settings["custom-dir-original-paths"]
+            for source, entry in zip(enabled_folders(settings), self.folders):
+                original = entry["original_path"] or known_paths.get(source)
+                if original:
+                    entry["original_path"] = original
+                    path = Path(original)
+                    if path != home and path.is_relative_to(home):
+                        entry["home_relative"] = str(path.relative_to(home))
+            Path("custom-dirs.json").write_text(
+                json.dumps({"version": 1, "folders": self.folders}, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
 
         # DE configuration
         if environment:
@@ -303,9 +333,12 @@ class Save:
             print(f"[WARN] Unknown DE: {environment_key}")
 
         self.save_dconf()
+        if environment and environment["de_name"] == "Cinnamon" and settings["save-backgrounds"]:
+            save_wallpaper(Path("General/dconf-settings.ini"), self.folders)
 
     def save_dconf(self):
-        os.system("dconf dump / > ./General/dconf-settings.ini")
+        with open("General/dconf-settings.ini", "wb") as dump:
+            subprocess.run(["dconf", "dump", "/"], stdout=dump, check=True)
         print("[OK] Saved dconf")
 
     def save_kde_config_data_dirs(self):
@@ -344,8 +377,10 @@ class Save:
 
 class Import:
 
-    def __init__(self):
-
+    def __init__(self, options, wallpaper=""):
+        folders = read_folder_metadata(Path.cwd())
+        plan = options.get("folders", {})
+        validate_folder_plan(folders, plan)
         # General dirs (reverse copy)
         for item in GENERAL_ITEMS.values():
             if settings[item["key"]]:
@@ -360,24 +395,9 @@ class Import:
             if settings[item["key"]]:
                 item["import"]()
 
-        # Custom dirs
-        if settings["enable-custom-dirs"]:
-            if settings["custom-dirs"]:
-                for folder in settings["custom-dirs"]:
-                    name = Path(folder).expanduser().name
-                    src = Path("Custom_Dirs") / name
-
-                    if src.exists():
-                        try:
-                            safe_copytree(str(src), str(Path(folder).expanduser()))
-                        except Exception:
-                            self._create_rec_dir()
-                            safe_copytree(str(src), str(self.rec_dir / name))
-                            print(f"[WARN] The {str(src)} custom directory was saved in: {str(self.rec_dir)}")
-            else:
-                self._create_rec_dir()
-                safe_copytree("Custom_Dirs", str(self.rec_dir))
-                print(f"[WARN] Custom Dirs were saved in: {str(self.rec_dir)}")
+        for source, destination in plan.items():
+            restore_tree(Path(source), Path(destination))
+            print(f"[OK] Restored custom folder: {destination}")
 
         # DE configuration
         if environment:
@@ -398,17 +418,13 @@ class Import:
         else:
             print(f"[WARN] Unknown DE: {environment_key}")
 
+        if wallpaper and options.get("wallpaper", settings["save-backgrounds"]):
+            restored = restore_wallpaper(wallpaper, folders, plan, home, flatpak)
+            if restored:
+                dump = Path("General/dconf-settings.ini") if Path("General").is_dir() else Path("dconf-settings.ini")
+                with dump.open("a", encoding="utf-8") as file:
+                    file.write("\n" + restored)
         self.import_dconf()
-
-    def _create_rec_dir(self):
-        base = Path(download_dir) / f"SaveDesktopPlus/Recovered_Custom_Dirs_{date.today()}"
-        self.rec_dir = base
-        i = 1
-        while self.rec_dir.exists():
-            self.rec_dir = Path(f"{base}_{i:02d}")
-            i += 1
-
-        self.rec_dir.mkdir(parents=True, exist_ok=True)
 
     def import_dconf(self):
         import subprocess
