@@ -1,5 +1,6 @@
 """Cinnamon background settings and their associated image."""
-from gettext import gettext as _
+from gettext import translation
+import os
 import json
 from pathlib import Path
 import re
@@ -10,6 +11,8 @@ from urllib.parse import unquote, urlsplit
 from gi.repository import GLib
 
 from savedesktop.core.custom_dirs import original_path
+
+_ = translation("savedesktop", localedir=os.getenv("SAVEDESKTOP_LOCALE"), fallback=True).gettext
 
 SECTION = "[org/cinnamon/desktop/background]"
 SECTION_PREFIX = "[org/cinnamon/desktop/background/"
@@ -42,7 +45,7 @@ def image_path(settings):
 
 
 def save_wallpaper(dump, folders):
-    _, settings = split_wallpaper(dump.read_text(encoding="utf-8"))
+    ignored, settings = split_wallpaper(dump.read_text(encoding="utf-8"))
     image = image_path(settings)
     if image is None:
         return
@@ -54,7 +57,7 @@ def save_wallpaper(dump, folders):
             if (Path(folder["archive_path"]) / relative).is_file():
                 matches.append((len(Path(original).parts), folder["archive_path"], str(relative)))
     if matches:
-        _, folder, relative = max(matches)
+        depth, folder, relative = max(matches)
         location = {"folder": folder, "relative": relative}
     elif image.is_file():
         directory = Path("General/Wallpaper")
