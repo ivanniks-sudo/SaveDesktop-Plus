@@ -1,6 +1,7 @@
 import os, shutil, subprocess, json, glob
 from gi.repository import GLib
 from savedesktop.globals import *
+from savedesktop.core.custom_dirs import save_custom_folders
 from pathlib import Path
 from datetime import date
 
@@ -280,15 +281,7 @@ class Save:
 
         # Custom dirs
         if settings["enable-custom-dirs"]:
-            os.makedirs("Custom_Dirs", exist_ok=True)
-            for folder in settings["custom-dirs"]:
-                name = Path(folder).name
-                dst = Path("Custom_Dirs") / name
-                i = 2
-                while dst.exists():
-                    dst = Path("Custom_Dirs") / f"{name}_{i}"
-                    i += 1
-                safe_copytree(folder, str(dst))
+            save_custom_folders(settings["custom-dirs"], Path("Custom_Dirs"), flatpak=flatpak)
 
         # DE configuration
         if environment:

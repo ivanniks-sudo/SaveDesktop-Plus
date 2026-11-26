@@ -750,9 +750,6 @@ class MainWindow(Adw.ApplicationWindow):
     # show message dialog in the error case
     def show_err_msg(self, error):
         self.error_str = str(error)
-        if "died" in self.error_str:
-            return
-
         self.errDialog = Adw.AlertDialog.new()
         self.errDialog.choose(self, None, None, None)
         self.errDialog.set_heading(heading=_("An error occurred"))

@@ -4,6 +4,7 @@ from pathlib import Path
 from gi.repository import GLib, Gio
 from savedesktop.globals import *
 from savedesktop.core.archive import Create
+from savedesktop.core.custom_dirs import CustomFolderCopyError
 
 # Get the current date
 dt = datetime.now()
@@ -89,7 +90,12 @@ class PeriodicBackups:
     def call_archive_command(self):
         dir_path = f"{self.pbfolder}/{self.filename}.sd.zip"
 
-        Create(dir_path) # archive.py
+        try:
+            Create(dir_path)
+        except CustomFolderCopyError as error:
+            Path(f"{CACHE}/pb").unlink(missing_ok=True)
+            subprocess.run(["notify-send", APP_NAME, str(error)])
+            raise
 
         self.done()
 
