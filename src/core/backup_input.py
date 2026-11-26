@@ -93,7 +93,9 @@ def backup_root(staging):
         root = candidates[0]
     general = root / "General"
     dump = (general if general.is_dir() else root) / "dconf-settings.ini"
-    if general.is_symlink() or not dump.is_file() or dump.is_symlink():
+    if any((root / name).is_symlink() for name in ("General", "DE", "Custom_Dirs", "Flatpak_Apps")):
+        raise ValueError("Backup sections cannot be symbolic links.")
+    if not dump.is_file() or dump.is_symlink():
         raise ValueError("The selected backup is missing dconf-settings.ini.")
     return root
 
@@ -120,12 +122,17 @@ def prepare_backup(source, password=None, *, parent=None):
 
 def restore_tree(source, destination):
     """Merge files without following existing links in destination directories."""
+    source = Path(source)
+    if source.is_symlink():
+        raise ValueError(f"Restore source is a symbolic link: {source}")
     destination = Path(destination)
-    if destination.is_symlink():
+    if any(path.is_symlink() for path in (destination, *destination.parents)):
         raise ValueError(f"Restore destination is a symbolic link: {destination}")
     destination.mkdir(parents=True, exist_ok=True)
     for entry in Path(source).iterdir():
         target = destination / entry.name
+        if entry.is_symlink() and target.is_symlink() and entry.readlink() == target.readlink():
+            continue
         if target.is_symlink():
             raise ValueError(f"Restore destination is a symbolic link: {target}")
         if entry.is_symlink():

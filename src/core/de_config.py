@@ -25,10 +25,7 @@ def safe_copy(src: str, dst: str):
 def safe_copytree(src: str, dst: str):
     if os.path.isdir(src):
         try:
-            if Path.cwd().name.startswith("restore-"):
-                restore_tree(src, dst)
-            else:
-                shutil.copytree(src, dst, dirs_exist_ok=True, symlinks=True)
+            shutil.copytree(src, dst, dirs_exist_ok=True, symlinks=True)
             print(f"[OK] Copied dir: {src} → {dst}")
         except Exception as e:
             print(f"[ERR] Dir copy failed {src} → {dst}: {e}")
@@ -172,7 +169,7 @@ def import_desktop_folder():
     archive = root / "desktop-folder.tgz"
     if archive.is_file():
         restore_tar(archive, desktop_dir.parent)
-        safe_copytree(root / "gvfs-metadata", home / ".local/share/gvfs-metadata")
+        restore_optional(root / "gvfs-metadata", home / ".local/share/gvfs-metadata")
         print("[OK] Restored Desktop folder")
 
 
@@ -299,9 +296,10 @@ class Save:
 
         self.folders = []
         if settings["enable-custom-dirs"]:
-            self.folders = save_custom_folders(enabled_folders(settings), Path("Custom_Dirs"), flatpak=flatpak)
+            selected_folders = enabled_folders(settings)
+            self.folders = save_custom_folders(selected_folders, Path("Custom_Dirs"), flatpak=flatpak)
             known_paths = settings["custom-dir-original-paths"]
-            for source, entry in zip(enabled_folders(settings), self.folders):
+            for source, entry in zip(selected_folders, self.folders):
                 original = entry["original_path"] or known_paths.get(source)
                 if original:
                     entry["original_path"] = original
@@ -375,6 +373,11 @@ class Save:
 # Import pipeline
 # ------------------------
 
+def restore_optional(source, destination):
+    if Path(source).is_dir():
+        restore_tree(source, destination)
+
+
 class Import:
 
     def __init__(self, options, wallpaper=""):
@@ -386,9 +389,9 @@ class Import:
             if settings[item["key"]]:
                 for src, dst in item["dirs"]:
                     if os.path.exists("General"):
-                        safe_copytree(os.path.join("General", dst), src)
+                        restore_optional(os.path.join("General", dst), src)
                     else:
-                        safe_copytree(dst, src)
+                        restore_optional(dst, src)
 
         # Special handlers
         for item in SPECIAL_ITEMS.values():
@@ -405,16 +408,16 @@ class Import:
                 print("Importing KDE Plasma configuration...")
                 for src, dst in KDE_DIRS_IMPORT:
                     if os.path.exists("DE"):
-                        safe_copytree(os.path.join("DE", src), dst)
+                        restore_optional(os.path.join("DE", src), dst)
                     else:
-                        safe_copytree(src, dst)
+                        restore_optional(src, dst)
             else:
                 print(f"Importing environment-specific config for: {environment['de_name']}")
                 for src, dst in environment["dirs"]:
                     if os.path.exists("DE"):
-                        safe_copytree(os.path.join("DE", dst), src)
+                        restore_optional(os.path.join("DE", dst), src)
                     else:
-                        safe_copytree(dst, src)
+                        restore_optional(dst, src)
         else:
             print(f"[WARN] Unknown DE: {environment_key}")
 

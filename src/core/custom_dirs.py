@@ -167,6 +167,7 @@ def check_destination(value):
     for ancestor in (path, *path.parents):
         if ancestor.is_symlink():
             raise ValueError(f"Destination contains a symbolic link: {ancestor}")
+    for ancestor in (path, *path.parents):
         if ancestor.exists():
             if not ancestor.is_dir() or not os.access(ancestor, os.W_OK | os.X_OK):
                 raise ValueError(f"Destination is not writable: {ancestor}")

@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 import os, subprocess, shutil, json, time
 from pathlib import Path
+from tempfile import TemporaryDirectory
+
+from backup_input import extract_tar, restore_tree
 
 APP_ID = "io.github.ivanniks_sudo.SaveDesktopPlus"
 UPSTREAM_ID = "io.github.vikdevelop.SaveDesktop"
@@ -88,18 +91,18 @@ if dest_dir:
         # Restore Data
         if copy_data:
             print("[COPY] Copying the Flatpak's user data to ~/.var/app", flush=True)
-            if os.path.exists("app"):
-                target = Path.home() / ".var/app"
-                target.mkdir(parents=True, exist_ok=True)
-                for entry in Path("app").iterdir():
-                    if entry.name not in PROTECTED_APPS:
-                        subprocess.run(["cp", "-au", "--", str(entry), str(target)])
+            excluded = set(disabled_flatpaks) | PROTECTED_APPS
+            target = Path.home() / ".var/app"
             archive_file = "Flatpak_Apps/flatpak-apps-data.tgz" if os.path.exists("Flatpak_Apps/flatpak-apps-data.tgz") else "flatpak-apps-data.tgz"
-            if os.path.exists(archive_file):
-                tar_cmd = ["tar", "-xzf", archive_file, "-C", f"{Path.home()}/.var"]
-                for d_app in sorted(set(disabled_flatpaks) | PROTECTED_APPS):
-                    tar_cmd.extend([f"--exclude={d_app}", f"--exclude=app/{d_app}"])
-                subprocess.run(tar_cmd)
+            with TemporaryDirectory(prefix="restore-apps-") as temporary:
+                staging = Path(temporary)
+                if os.path.exists(archive_file):
+                    extract_tar(archive_file, staging)
+                for source in (Path("app"), staging / "app"):
+                    if source.is_dir() and not source.is_symlink():
+                        for entry in source.iterdir():
+                            if entry.name not in excluded:
+                                restore_tree(entry, target / entry.name)
             print("✔ Copied Flatpak's user data", flush=True)
             report_progress() # sends update to UI
 

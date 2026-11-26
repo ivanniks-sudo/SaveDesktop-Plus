@@ -104,7 +104,10 @@ class Unpack:
 
         for line in lines:
             # Start of problematic schema
-            if line.startswith("[org/gnome/portal/filechooser"):
+            if any(line.startswith(prefix) for prefix in (
+                "[org/gnome/portal/filechooser", "[io/github/vikdevelop/SaveDesktop",
+                "[io/github/ivanniks_sudo/SaveDesktopPlus",
+            )):
                 skip_block = True
                 continue
 
@@ -119,7 +122,7 @@ class Unpack:
             with open(path, "w", encoding="utf-8") as f:
                 f.writelines(sanitized)
 
-            print("Removed org/gnome/portal/filechooser from dconf-settings.ini")
+            print("Excluded application and portal settings from the dconf import")
             
     # Replace original /home/$USER path with actual path in the dconf-settings.ini file and other XML files
     def _replace_home_in_files(self, root, home, patterns=(".xml", ".ini")):
