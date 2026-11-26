@@ -80,7 +80,7 @@
 			<summary>Filename text</summary>
 		</key>
 		<key name="filename-format" type="s">
-			<default>'Latest_configuration'</default>
+			<default>'SaveDesktopPlus_configuration'</default>
 			<summary>File name format (designed to periodic saving)</summary>
 		</key>
 		<key name="enable-encryption" type="b">

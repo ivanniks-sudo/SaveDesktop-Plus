@@ -145,26 +145,20 @@ Use distinct backup destinations when configuring both applications.
   ```
 </details>
 
-## 📦 Installation
+## Installation
 
-### Stable releases
+SaveDesktop Plus is available as an x86_64 preview bundle built by the GitHub Actions
+workflow. Download its artifact and verify `SHA256SUMS`, then install in your user account:
 
-**Flathub** _(recommended)_: The latest stable releases
+```sh
+flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+flatpak install --user flathub org.gnome.Platform//50
+flatpak install --user ./SaveDesktop-Plus-x86_64-preview.flatpak
+flatpak run io.github.ivanniks_sudo.SaveDesktopPlus//preview
+```
 
-
-> [!WARNING]
-> **Snap Store**: Frozen at version `3.6.2-hotfix`, no updates will be provided. Active development continues on **Flathub** (see above).
->
-> <a href="https://snapcraft.io/savedesktop"><img alt="Get it from the Snap Store" src="https://snapcraft.io/en/light/install.svg" /></a>
-
-### Beta releases
-- Flathub Beta:
-  - [**Install from file**](https://dl.flathub.org/beta-repo/appstream/io.github.vikdevelop.SaveDesktop.flatpakref)
-
-* GNOME Builder (for development):
-
-  1. Install GNOME Builder from [Flathub](https://flathub.org/apps/org.gnome.Builder)
-  2. Clone this repo and run the project
+The original SaveDesktop is available on [Flathub](https://flathub.org/apps/io.github.vikdevelop.SaveDesktop).
+The Snap manifest in this repository is retained for the upstream project.
 
 ## 🤝 Contributing
 
