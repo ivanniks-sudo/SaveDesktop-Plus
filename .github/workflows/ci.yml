@@ -41,6 +41,7 @@ jobs:
           flatpak-builder --arch=x86_64 --default-branch=preview --force-clean --sandbox --repo=sdrepo build "${APP_ID}.json"
           desktop-file-validate "build/files/share/applications/${APP_ID}.desktop"
           test -x build/files/bin/savedesktop-plus
+          test -f build/files/share/locale/ru/LC_MESSAGES/savedesktop.mo
           test -f "build/files/share/glib-2.0/schemas/${APP_ID}.gschema.xml"
           test -f "build/files/share/icons/hicolor/scalable/apps/${APP_ID}.svg"
           test -f "build/files/share/metainfo/${APP_ID}.metainfo.xml"
