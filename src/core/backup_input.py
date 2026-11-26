@@ -20,6 +20,8 @@ def extract_zip(source, staging, password):
     with zipfile.ZipFile(source) as archive:
         seen = set()
         for entry in archive.infolist():
+            if entry.is_dir() and entry.filename == "./":
+                continue
             name = member_path(entry.filename)
             if name in seen:
                 raise ValueError(f"Duplicate backup entry: {name}")

@@ -46,12 +46,12 @@ class Create:
             pending = Path(temporary) / "new"
             previous = Path(temporary) / "previous"
             shutil.copytree(source, pending, symlinks=True)
-            if output.exists() or output.is_symlink():
-                output.rename(previous)
             try:
+                if output.exists() or output.is_symlink():
+                    output.rename(previous)
                 pending.rename(output)
-            except OSError:
-                if previous.exists() or previous.is_symlink():
+            except BaseException:
+                if not (output.exists() or output.is_symlink()) and (previous.exists() or previous.is_symlink()):
                     previous.rename(output)
                 raise
 
@@ -163,11 +163,10 @@ if __name__ == "__main__":
 
     signal.signal(signal.SIGTERM, cancel)
 
-    if args.create:
-        dir_path = args.create
-        Create(dir_path)
-    elif args.unpack:
-        dir_path = args.unpack
-        Unpack(dir_path, json.load(sys.stdin) if args.restore_options_stdin else None)
-    else:
-        pass
+    try:
+        if args.create:
+            Create(args.create)
+        elif args.unpack:
+            Unpack(args.unpack, json.load(sys.stdin) if args.restore_options_stdin else None)
+    except (ValueError, OSError, subprocess.CalledProcessError) as error:
+        sys.exit(str(error))

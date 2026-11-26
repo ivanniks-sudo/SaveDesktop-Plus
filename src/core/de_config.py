@@ -41,10 +41,10 @@ def save_icons():
     legacy_path = f"{home}"
 
     if os.path.isdir(f"{xdg_path}/icons"):
-        subprocess.run(["tar", "-czf", "General/icon-themes.tgz", "-C", xdg_path, "icons"])
+        subprocess.run(["tar", "-czf", "General/icon-themes.tgz", "-C", xdg_path, "icons"], check=True)
 
     if os.path.isdir(f"{legacy_path}/.icons"):
-        subprocess.run(["tar", "-czf", "General/icon-themes-legacy.tgz", "-C", legacy_path, ".icons"])
+        subprocess.run(["tar", "-czf", "General/icon-themes-legacy.tgz", "-C", legacy_path, ".icons"], check=True)
 
     print("[OK] Saving icons")
 
@@ -76,7 +76,7 @@ def save_flatpak_data():
 
     cmd.extend(["-C", f"{home}/.var", "app"])
 
-    subprocess.run(cmd)
+    subprocess.run(cmd, check=True)
     print("[OK] Saving Flatpak app data")
 
 def export_flatpaks(path, output_file, install_type):
@@ -94,6 +94,10 @@ def create_flatpak_list():
     print("[OK] Saving Flatpak app list")
 
 def create_flatpak_autostart():
+    if not any(Path(name).exists() for name in (
+        "Flatpak_Apps", "installed_flatpaks.sh", "installed_user_flatpaks.sh", "flatpak-apps-data.tgz", "app",
+    )):
+        return
     workspace = Path(CACHE) / "workspace"
     workspace.mkdir(exist_ok=True)
     shutil.copy2(Path(app_prefix) / "savedesktop/core/flatpaks_installer.py", workspace)
@@ -159,7 +163,7 @@ def save_desktop_folder():
         "tar", "-czf", "General/desktop-folder.tgz",
         "-C", str(desktop_dir.parent),
         desktop_dir.name
-    ])
+    ], check=True)
 
     safe_copytree(f"{home}/.local/share/gvfs-metadata", "General/gvfs-metadata")
     print("[OK] Saving Desktop folder")
