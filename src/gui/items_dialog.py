@@ -12,6 +12,7 @@ class itemsDialog(Adw.AlertDialog):
     def __init__(self, parent, items_list=None):
         super().__init__()
         self.parent = parent
+        self.restoring = items_list is not None
         self.items_list = items_list if items_list is not None else []
 
         self.set_heading(_("Select configuration items"))
@@ -78,13 +79,16 @@ class itemsDialog(Adw.AlertDialog):
         self.switch_04.set_valign(align=Gtk.Align.CENTER)
          
         self.backgrounds_row = Adw.ActionRow.new()
-        self.backgrounds_row.set_title(title=_("Backgrounds"))
+        self.backgrounds_row.set_title(title=(
+            _("Restore desktop wallpaper") if self.restoring and environment and environment["de_name"] == "Cinnamon"
+            else _("Backgrounds")
+        ))
         self.backgrounds_row.set_use_markup(True)
         self.backgrounds_row.set_title_lines(2)
         self.backgrounds_row.set_subtitle_lines(3)
         self.backgrounds_row.add_suffix(self.switch_04)
         self.backgrounds_row.set_activatable_widget(self.switch_04)
-        if self.should_show("backgrounds"):
+        if self.should_show("backgrounds", "wallpapers", "Wallpaper.json") or (self.restoring and environment and environment["de_name"] == "Cinnamon"):
             self.itemsBox.append(child=self.backgrounds_row)
         
         # show extension switch and row if user has installed these environments
@@ -116,7 +120,7 @@ class itemsDialog(Adw.AlertDialog):
         self.switch_de.set_valign(align=Gtk.Align.CENTER)
 
         self.desktop_row = Adw.ActionRow.new()
-        self.desktop_row.set_title(title=_("Desktop"))
+        self.desktop_row.set_title(title=_("Restore desktop contents") if self.restoring else _("Desktop"))
         self.desktop_row.set_tooltip_text(GLib.get_user_special_dir(GLib.UserDirectory.DIRECTORY_DESKTOP))
         self.desktop_row.set_subtitle_selectable(True)
         self.desktop_row.set_use_markup(True)
@@ -129,7 +133,7 @@ class itemsDialog(Adw.AlertDialog):
         # Custom directories section
         self.custom_switch = Gtk.Switch.new()
         self.custom_switch.set_valign(Gtk.Align.CENTER)
-        if settings["enable-custom-dirs"]:
+        if settings["enable-custom-dirs"] or (self.restoring and self.should_show("Custom_Dirs/")):
             self.custom_switch.set_active(True)
 
         self.custom_button = Gtk.Button.new_from_icon_name("go-next-symbolic")
@@ -140,12 +144,13 @@ class itemsDialog(Adw.AlertDialog):
         self.custom_row = Adw.ActionRow.new()
         self.custom_row.set_title(_("Custom folders"))
         self.custom_row.add_suffix(self.custom_switch)
-        if self.custom_switch.get_active():
+        if self.custom_switch.get_active() and not self.restoring:
             self.custom_row.add_suffix(self.custom_button)
         if self.should_show("Custom_Dirs"):
             self.itemsBox.append(child=self.custom_row)
 
-        self.custom_switch.connect('notify::active', self._set_show_custom_button)
+        if not self.restoring:
+            self.custom_switch.connect('notify::active', self._set_show_custom_button)
 
         if flatpak and self.should_show("installed_flatpaks.sh"):
             self.flatpak_row = Adw.ExpanderRow.new()

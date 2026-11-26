@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import os, sys, re, zipfile, random, string, gi, subprocess, locale, shutil, tarfile
+import os, sys, re, zipfile, random, string, gi, subprocess, locale, shutil, json
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
 from gi.repository import Gtk, Adw, Gio, GLib, Gdk
@@ -9,6 +9,9 @@ from threading import Thread
 from savedesktop.globals import *
 from savedesktop.gui.more_options_dialog import MoreOptionsDialog
 from savedesktop.gui.items_dialog import itemsDialog
+from savedesktop.gui.restore_folders_dialog import RestoreFoldersDialog
+from savedesktop.core.backup_input import prepare_backup
+from savedesktop.core.custom_dirs import read_folder_metadata
 from savedesktop.gui.synchronization_dialogs import InitSetupDialog, SetDialog, CloudDialog
 
 # Application window
@@ -387,7 +390,7 @@ class MainWindow(Adw.ApplicationWindow):
         self.file_filter = Gtk.FileFilter.new()
         self.file_filter.set_name(_("Save Desktop files"))
         self.file_filter.add_pattern('*.sd.tar.gz')
-        self.file_filter.add_pattern('*.sd.zip')
+        self.file_filter.add_suffix('zip')
         self.file_filter_list = Gio.ListStore.new(Gtk.FileFilter);
         self.file_filter_list.append(self.file_filter)
         self.file_chooser.set_filters(self.file_filter_list)
@@ -535,68 +538,51 @@ class MainWindow(Adw.ApplicationWindow):
         self.done_title = _("The configuration has been applied!")
         self.done_desc = _("<big><b>{}</b></big>\nYou can log out of the system for the changes to take effect, or go back to the previous page and log out later.\n\n<i>If your archive contains Flatpak apps, they will start installing after the next login.</i>").format(_("The configuration has been applied!"))
 
-        self._show_items_dialog()
+        self.restore_options = {}
+        Thread(target=self._inspect_backup, daemon=True).start()
 
-    # Get items which are available in the configuration archive or folder
-    def _get_archive_items(self):
-        tmp_file_path = f"{CACHE}/workspace/temp_file"
-        if os.path.exists(tmp_file_path):
-            with open(tmp_file_path) as f:
-                password = f.read().strip()
+    def _inspect_backup(self):
+        try:
+            credentials = Path(CACHE) / "temp_file"
+            password = credentials.read_text().strip() if credentials.is_file() else None
+            with prepare_backup(self.archive_name, password, parent=CACHE) as root:
+                paths = [str(path.relative_to(root)) for path in root.rglob("*")]
+                folders = read_folder_metadata(root)
+        except (ValueError, OSError) as error:
+            GLib.idle_add(self._inspect_failed, str(error))
         else:
-            password = None
+            GLib.idle_add(self._show_restore_items, paths, folders)
 
-        if self.archive_name.endswith(".sd.zip"):
-            if password:
-                result = subprocess.run(
-                    ["7z", "l", "-slt", f"-p{password}", self.archive_name],
-                    capture_output=True,
-                    text=True,
-                    check=True
-                )
-            else:
-                result = subprocess.run(
-                    ["7z", "l", "-slt", self.archive_name],
-                    capture_output=True,
-                    text=True,
-                    check=True
-                )
+    def _inspect_failed(self, error):
+        self.toast_overlay.dismiss_all()
+        (Path(CACHE) / "temp_file").unlink(missing_ok=True)
+        self.show_err_msg(error)
 
-            paths = []
-            for line in result.stdout.splitlines():
-                if line.startswith("Path = "):
-                    paths.append(line[7:])
-
-        elif self.archive_name.endswith(".sd.tar.gz"):
-            with tarfile.open(self.archive_name, "r:*") as tar:
-                paths = [m.name for m in tar.getmembers()]
-        else:
-            cfg = Path(self.archive_name)
-
-            paths = [
-                str(f.relative_to(cfg))
-                for f in cfg.rglob("*")
-                if f.is_file()
-            ]
-
-        return paths
-
-    def _show_items_dialog(self):
-        self.archive_items = self._get_archive_items()
-        self.items_dialog = itemsDialog(self, self.archive_items)
-        if not self.items_dialog.itemsBox.observe_children().get_n_items() == 0:
-            self.items_dialog.choose(self, None, None, None)
-            self.items_dialog.connect("response", self._on_items_dialog_response)
-            self.items_dialog.present(self)
-        else:
-            self._start_gui()
+    def _show_restore_items(self, paths, folders):
+        self.restore_folders = folders
+        self.items_dialog = itemsDialog(self, paths)
+        self.items_dialog.connect("response", self._on_items_dialog_response)
+        self.items_dialog.present(self)
 
     def _on_items_dialog_response(self, dialog, response, *args):
-        if response == "cancel":
-            pass
-        elif response == "ok":
-            print("Importing the configuration is in progress…")
-            self._start_gui()
+        if response != "ok":
+            self._finish_folder_plan(None)
+            return
+        self.restore_options["wallpaper"] = dialog.switch_04.get_active()
+        if self.restore_folders and dialog.custom_switch.get_active():
+            RestoreFoldersDialog(
+                self, self.restore_folders, bool(environment and environment["de_name"] == "Cinnamon"),
+                self._finish_folder_plan,
+            ).present(self)
+        else:
+            self._finish_folder_plan({})
+
+    def _finish_folder_plan(self, plan):
+        if plan is None:
+            (Path(CACHE) / "temp_file").unlink(missing_ok=True)
+            return
+        self.restore_options["folders"] = plan
+        self._start_gui()
 
     def _start_gui(self):
         self.please_wait()
@@ -604,23 +590,32 @@ class MainWindow(Adw.ApplicationWindow):
         import_thread.start()
 
     def _call_archive_command(self):
+        command = [sys.executable, "-m", "savedesktop.core.archive", self.archive_mode, self.archive_name]
+        options = None
+        if self.archive_mode == "--unpack":
+            command.append("--restore-options-stdin")
+            options = json.dumps(self.restore_options)
         self.archive_proc = subprocess.Popen(
-            [sys.executable, "-m", "savedesktop.core.archive", self.archive_mode, self.archive_name],
-            stdout=None,
-            stderr=subprocess.PIPE,
-            text=True,
-            env={**os.environ, "PYTHONPATH": f"{app_prefix}"}
+            command, stdout=None, stderr=subprocess.PIPE,
+            stdin=subprocess.PIPE if options is not None else None,
+            text=True, env={**os.environ, "PYTHONPATH": f"{app_prefix}"},
         )
-        out, err = self.archive_proc.communicate()
-        print(out)
+        _, err = self.archive_proc.communicate(options)
 
         if self.archive_proc.returncode == 0:
             GLib.idle_add(self.done)
-        elif self.archive_proc.returncode < 0:
+            if err.strip():
+                GLib.idle_add(self._show_restore_notice, err.strip())
+        elif self.archive_proc.returncode < 0 or self.archive_proc.returncode == 130:
             print("Cancelled by user.")
         else:
             GLib.idle_add(self.show_err_msg, err)
             GLib.idle_add(self._set_default_widgets_state)
+
+    def _show_restore_notice(self, message):
+        dialog = Adw.AlertDialog.new(_("Backup notice"), message)
+        dialog.add_response("close", _("Close"))
+        dialog.present(self)
 
     # "Please wait" information page
     def please_wait(self):
@@ -669,7 +664,7 @@ class MainWindow(Adw.ApplicationWindow):
     # Kill a process for saving/importing configuration
     def _kill_process(self):
         if hasattr(self, "archive_proc") and self.archive_proc.poll() is None:
-            self.archive_proc.kill()
+            self.archive_proc.terminate()
             print("The process was stopped.")
 
     # config has been saved action
@@ -751,14 +746,13 @@ class MainWindow(Adw.ApplicationWindow):
     def show_err_msg(self, error):
         self.error_str = str(error)
         self.errDialog = Adw.AlertDialog.new()
-        self.errDialog.choose(self, None, None, None)
         self.errDialog.set_heading(heading=_("An error occurred"))
         self.errDialog.set_body(body=f"{self.error_str}")
         self.errDialog.add_response('cancel', _("Cancel"))
         self.errDialog.add_response('copy', _("Copy"))
         self.errDialog.set_response_appearance('copy', Adw.ResponseAppearance.SUGGESTED)
         self.errDialog.connect('response', self._errDialog_closed)
-        self.errDialog.present()
+        self.errDialog.present(self)
 
     def _errDialog_closed(self, w, response):
         if response == "copy":
