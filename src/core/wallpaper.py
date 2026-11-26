@@ -70,7 +70,7 @@ def save_wallpaper(dump, folders):
     Path("General/Wallpaper.json").write_text(json.dumps(location, ensure_ascii=False), encoding="utf-8")
 
 
-def restore_wallpaper(settings, folders, plan, home, flatpak, data_dir):
+def restore_wallpaper(root, settings, folders, plan, home, flatpak, data_dir):
     source = image_path(settings)
     if source is None:
         if "picture-uri=" in settings:
@@ -80,14 +80,14 @@ def restore_wallpaper(settings, folders, plan, home, flatpak, data_dir):
 
     path = None
     copied = False
-    metadata = Path("General/Wallpaper.json")
+    metadata = root / "General/Wallpaper.json"
     if metadata.is_file() and not metadata.is_symlink():
         data = json.loads(metadata.read_text(encoding="utf-8"))
         if "file" in data:
             name = data["file"]
             if not isinstance(name, str) or Path(name).name != name or name in ("", ".", ".."):
                 raise ValueError("Invalid wallpaper file in backup.")
-            image = Path("General/Wallpaper") / name
+            image = root / "General/Wallpaper" / name
             if image.is_file() and not image.is_symlink():
                 target = home / ".local/share/backgrounds/SaveDesktopPlus"
                 try:

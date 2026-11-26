@@ -3,7 +3,7 @@ from pathlib import Path
 from savedesktop.globals import *
 from savedesktop.core.password_store import PasswordStore
 from savedesktop.core.de_config import Save, Import
-from savedesktop.core.backup_input import prepare_backup
+from savedesktop.core.backup_input import HOME_PATH, ZipPath, prepare_backup
 from savedesktop.core.wallpaper import split_wallpaper
 from savedesktop.core.desktop_configuration import filter_desktop_settings
 
@@ -80,53 +80,37 @@ class Create:
 class Unpack:
     def __init__(self, dir_path, options=None):
         options = options or {}
-        previous = Path.cwd()
         try:
             with prepare_backup(dir_path, password, parent=CACHE) as root:
-                os.chdir(root)
-                dump = Path("General/dconf-settings.ini") if Path("General").is_dir() else Path("dconf-settings.ini")
-                self._sanitize_dconf_dump(dump)
+                general = root / "General" if (root / "General").is_dir() else root
+                dump = self._sanitize_dconf_dump((general / "dconf-settings.ini").read_text(encoding="utf-8"))
                 wallpaper = ""
                 if environment and environment["de_name"] == "Cinnamon":
-                    other, wallpaper = split_wallpaper(dump.read_text(encoding="utf-8"))
-                    dump.write_text(filter_desktop_settings(other, options.get("desktop_configuration", True)), encoding="utf-8")
-                self._replace_home_in_files(".", home)
-                Import(options, wallpaper)
+                    dump, wallpaper = split_wallpaper(dump)
+                    dump = filter_desktop_settings(dump, options.get("desktop_configuration", True))
+                dump = HOME_PATH.sub(lambda _: str(home).encode("utf-8"), dump.encode("utf-8")).decode("utf-8")
+                if isinstance(root, ZipPath):
+                    root.backup.home = home
+                else:
+                    self._replace_home_in_files(root, home)
+                Import(root, options, dump, wallpaper)
         finally:
-            os.chdir(previous)
             remove_temp_file()
         print("Configuration imported successfully.")
 
-    # Remove the org/gnome/portal/filechooser string from the dconf-settings.ini file
-    def _sanitize_dconf_dump(self, path):
-        with open(path, "r", encoding="utf-8") as f:
-            lines = f.readlines()
-
-        sanitized = []
+    def _sanitize_dconf_dump(self, dump):
+        lines = []
         skip_block = False
-
-        for line in lines:
-            # Start of problematic schema
-            if any(line.startswith(prefix) for prefix in (
-                "[org/gnome/portal/filechooser", "[io/github/vikdevelop/SaveDesktop",
-                "[io/github/ivanniks_sudo/SaveDesktopPlus",
-            )):
-                skip_block = True
-                continue
-
-            # End of schema block
-            if skip_block and line.startswith("["):
-                skip_block = False
-
+        for line in dump.splitlines(keepends=True):
+            if line.startswith("["):
+                skip_block = line.startswith((
+                    "[org/gnome/portal/filechooser", "[io/github/vikdevelop/SaveDesktop",
+                    "[io/github/ivanniks_sudo/SaveDesktopPlus",
+                ))
             if not skip_block:
-                sanitized.append(line)
+                lines.append(line)
+        return "".join(lines)
 
-        if sanitized != lines:
-            with open(path, "w", encoding="utf-8") as f:
-                f.writelines(sanitized)
-
-            print("Excluded application and portal settings from the dconf import")
-            
     # Replace original /home/$USER path with actual path in the dconf-settings.ini file and other XML files
     def _replace_home_in_files(self, root, home, patterns=(".xml", ".ini")):
         # Define a regular expression as binary (prefix "b")

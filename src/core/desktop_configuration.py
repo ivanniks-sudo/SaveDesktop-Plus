@@ -39,7 +39,8 @@ def filter_desktop_settings(dump, enabled):
 def read_keyfile(path):
     data = GLib.KeyFile()
     if path.is_file() and not path.is_symlink():
-        data.load_from_file(str(path), GLib.KeyFileFlags.KEEP_COMMENTS)
+        contents = path.read_text(encoding="utf-8")
+        data.load_from_data(contents, len(contents.encode("utf-8")), GLib.KeyFileFlags.KEEP_COMMENTS)
     return data
 
 
@@ -59,9 +60,9 @@ def save_desktop_configuration(nemo_directory):
             data.save_to_file(ARCHIVE_FILE)
 
 
-def restore_desktop_configuration(nemo_directory):
+def restore_desktop_configuration(root, nemo_directory):
     for filename in (ARCHIVE_FILE, f"DE/nemo/{NEMO_FILE}", f"nemo/{NEMO_FILE}"):
-        source = Path(filename)
+        source = root / filename
         if source.is_symlink() or not source.is_file():
             continue
         destination = nemo_directory / NEMO_FILE

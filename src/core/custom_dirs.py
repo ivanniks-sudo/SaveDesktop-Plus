@@ -120,7 +120,7 @@ def read_folder_metadata(root):
         return []
     entries = {
         f"Custom_Dirs/{path.name}": {"name": path.name, "archive_path": f"Custom_Dirs/{path.name}"}
-        for path in sorted(directory.iterdir()) if path.is_dir() and not path.is_symlink()
+        for path in sorted(directory.iterdir(), key=lambda item: item.name) if path.is_dir() and not path.is_symlink()
     }
     metadata = root / "custom-dirs.json"
     if metadata.is_file() and not metadata.is_symlink():

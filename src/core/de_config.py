@@ -1,4 +1,4 @@
-import os, shutil, subprocess, json, glob
+import os, shutil, subprocess, json, glob, tempfile
 from gi.repository import GLib
 from savedesktop.globals import *
 from savedesktop.core.custom_dirs import enabled_folders, original_path, save_custom_folders, read_folder_metadata, validate_folder_plan
@@ -49,23 +49,15 @@ def save_icons():
 
     print("[OK] Saving icons")
 
-def import_icons():
-    if os.path.exists("General"):
-        if os.path.exists("General/icon-themes.tgz"):
-            restore_tar("General/icon-themes.tgz", home / ".local/share/icons", single_folder=True)
+def import_icons(root):
+    for name, destination in (
+        ("icon-themes.tgz", home / ".local/share/icons"),
+        ("icon-themes-legacy.tgz", home / ".icons"),
+    ):
+        archive = root / name
+        if archive.is_file() and not archive.is_symlink():
+            restore_tar(archive, destination, single_folder=True)
 
-        if os.path.exists("General/icon-themes-legacy.tgz"):
-            restore_tar("General/icon-themes-legacy.tgz", home / ".icons", single_folder=True)
-
-        print("[OK] Importing icons")
-    else:
-        if os.path.exists("icon-themes.tgz"):
-            restore_tar("icon-themes.tgz", home / ".local/share/icons", single_folder=True)
-
-        if os.path.exists("icon-themes-legacy.tgz"):
-            restore_tar("icon-themes-legacy.tgz", home / ".icons", single_folder=True)
-
-        print("[OK] Importing icons")
 
 def save_flatpak_data():
     blacklist = settings["disabled-flatpak-apps-data"]
@@ -94,32 +86,32 @@ def create_flatpak_list():
     export_flatpaks(f'{home}/.local/share/flatpak/app', 'Flatpak_Apps/installed_user_flatpaks.sh', 'user')
     print("[OK] Saving Flatpak app list")
 
-def create_flatpak_autostart():
-    if not any(Path(name).exists() for name in (
-        "Flatpak_Apps", "installed_flatpaks.sh", "installed_user_flatpaks.sh", "flatpak-apps-data.tgz", "app",
-    )):
+def create_flatpak_autostart(root):
+    lists = ("installed_flatpaks.sh", "installed_user_flatpaks.sh")
+    data = ("flatpak-apps-data.tgz",)
+    names = (lists if settings["save-installed-flatpaks"] else ()) + (data if settings["save-flatpak-data"] else ())
+    flatpak_section = root / "Flatpak_Apps"
+    sources = flatpak_section if flatpak_section.is_dir() and not flatpak_section.is_symlink() else root
+    legacy_app = root / "app"
+    files = [sources / name for name in names if (sources / name).is_file() and not (sources / name).is_symlink()]
+    copy_legacy = settings["save-flatpak-data"] and legacy_app.is_dir() and not legacy_app.is_symlink()
+    if not files and not copy_legacy:
         return
     workspace = Path(CACHE) / "workspace"
     workspace.mkdir(exist_ok=True)
-    shutil.copy2(Path(app_prefix) / "savedesktop/core/flatpaks_installer.py", workspace)
-    shutil.copy2(Path(app_prefix) / "savedesktop/core/backup_input.py", workspace)
-    if (workspace / "Flatpak_Apps").exists():
-        shutil.rmtree(workspace / "Flatpak_Apps")
-    if Path("Flatpak_Apps").is_dir():
-        shutil.copytree("Flatpak_Apps", workspace / "Flatpak_Apps", symlinks=True)
-    for name in ("installed_flatpaks.sh", "installed_user_flatpaks.sh", "flatpak-apps-data.tgz", "app"):
+    shutil.copy2(Path(__file__).with_name("flatpaks_installer.py"), workspace)
+    shutil.copy2(Path(__file__).with_name("backup_input.py"), workspace)
+    for name in ("Flatpak_Apps", "app", *lists, *data):
         target = workspace / name
         if target.is_dir() and not target.is_symlink():
             shutil.rmtree(target)
         else:
             target.unlink(missing_ok=True)
-        source = Path(name)
-        if source.is_symlink():
-            raise ValueError(f"Unexpected symbolic link: {name}")
-        if source.is_dir():
-            shutil.copytree(source, target, symlinks=True)
-        elif source.is_file():
-            shutil.copy2(source, target)
+    destination = workspace / "Flatpak_Apps" if sources is flatpak_section else workspace
+    for source in files:
+        restore_file(source, destination / source.name)
+    if copy_legacy:
+        restore_tree(legacy_app, workspace / "app")
 
     # Create a JSON file with the user's preferences for Flatpak apps
     with open(f"{CACHE}/workspace/flatpak-prefs.json", "w") as fl:
@@ -143,8 +135,7 @@ def save_bookmarks():
     if settings["save-bookmarks"]:
         safe_copy(f"{home}/.config/gtk-3.0/bookmarks", "General/gtk-3.0/bookmarks")
 
-def import_bookmarks():
-    root = Path("General") if Path("General").is_dir() else Path(".")
+def import_bookmarks(root):
     restore_optional(root / "gtk-4.0", home / ".config/gtk-4.0")
     source = root / "gtk-3.0/bookmarks"
     if settings["save-bookmarks"] and source.is_file():
@@ -170,10 +161,9 @@ def save_desktop_folder():
         safe_copytree(f"{home}/.local/share/gvfs-metadata", "General/gvfs-metadata")
     print("[OK] Saving Desktop folder")
 
-def import_desktop_folder():
-    root = Path("General") if Path("General").is_dir() else Path(".")
+def import_desktop_folder(root):
     archive = root / "desktop-folder.tgz"
-    if archive.is_file():
+    if archive.is_file() and not archive.is_symlink():
         if desktop_dir == home:
             raise ValueError("The desktop location is the whole home directory.")
         restore_tar(archive, desktop_dir, single_folder=True)
@@ -385,14 +375,15 @@ class Save:
 # ------------------------
 
 def restore_optional(source, destination, *, exclude=()):
-    if Path(source).is_dir():
+    if source.is_dir():
         restore_tree(source, destination, exclude=exclude)
 
 
 class Import:
 
-    def __init__(self, options, wallpaper=""):
-        folders = read_folder_metadata(Path.cwd())
+    def __init__(self, root, options, dump, wallpaper=""):
+        general = root / "General" if (root / "General").is_dir() else root
+        folders = read_folder_metadata(root)
         plan = options.get("folders", {})
         validate_folder_plan(folders, plan)
         cinnamon = bool(environment and environment["de_name"] == "Cinnamon")
@@ -418,19 +409,19 @@ class Import:
             enabled = restore_background if name == "backgrounds" else settings[item["key"]]
             if enabled:
                 for src, dst in item["dirs"]:
-                    if os.path.exists("General"):
-                        restore_optional(os.path.join("General", dst), src)
-                    else:
-                        restore_optional(dst, src)
+                    restore_optional(general / dst, src)
 
-        # Special handlers
         for name, item in SPECIAL_ITEMS.items():
+            if name in ("flatpaks", "flatpak-data"):
+                continue
             enabled = restore_contents if name == "desktop" else settings[item["key"]]
             if enabled:
-                item["import"]()
+                item["import"](general)
+        if settings["save-installed-flatpaks"] or settings["save-flatpak-data"]:
+            create_flatpak_autostart(root)
 
         for source, destination in plan.items():
-            restore_tree(Path(source), Path(destination))
+            restore_tree(root / source, Path(destination))
             print(f"[OK] Restored custom folder: {destination}")
 
         # DE configuration
@@ -438,51 +429,34 @@ class Import:
             if environment["de_name"] == "KDE Plasma":
                 print("Importing KDE Plasma configuration...")
                 for src, dst in KDE_DIRS_IMPORT:
-                    if os.path.exists("DE"):
-                        restore_optional(os.path.join("DE", src), dst)
-                    else:
-                        restore_optional(src, dst)
+                    source = root / "DE" / src if (root / "DE").is_dir() else root / src
+                    restore_optional(source, dst)
             else:
                 print(f"Importing environment-specific config for: {environment['de_name']}")
                 for src, dst in environment["dirs"]:
-                    source = Path("DE") / dst if Path("DE").is_dir() else Path(dst)
+                    source = root / "DE" / dst if (root / "DE").is_dir() else root / dst
                     excluded = (NEMO_FILE,) if cinnamon and dst == "nemo" else ()
                     restore_optional(source, src, exclude=excluded)
         else:
             print(f"[WARN] Unknown DE: {environment_key}")
 
         if wallpaper and restore_background:
-            restored = restore_wallpaper(wallpaper, folders, plan, home, flatpak, DATA)
+            restored = restore_wallpaper(root, wallpaper, folders, plan, home, flatpak, DATA)
             if restored:
-                dump = Path("General/dconf-settings.ini") if Path("General").is_dir() else Path("dconf-settings.ini")
-                with dump.open("a", encoding="utf-8") as file:
-                    file.write("\n" + restored)
-        self.import_dconf()
+                dump += "\n" + restored
+        self.import_dconf(dump)
         if cinnamon and restore_configuration:
-            restore_desktop_configuration(home / ".config/nemo")
+            restore_desktop_configuration(root, home / ".config/nemo")
 
-    def import_dconf(self):
-        import subprocess
-
-        path = (
-            "./General/dconf-settings.ini"
-            if os.path.exists("General")
-            else "./dconf-settings.ini"
-        )
-
+    def import_dconf(self, dump):
         env = os.environ.copy()
-
-        if not flatpak:
-            with open("temporary-profile", "w") as profile:
-                profile.write("user-db:user\n")
-            env["DCONF_PROFILE"] = os.path.abspath("temporary-profile")
-
-        with open(path, "rb") as source:
-            subprocess.run(
-                ["dconf", "load", "/"],
-                stdin=source,
-                env=env,
-                check=True
-            )
-
+        payload = dump.encode("utf-8")
+        if flatpak:
+            subprocess.run(["dconf", "load", "/"], input=payload, env=env, check=True)
+        else:
+            with tempfile.TemporaryDirectory(prefix="dconf-profile-") as directory:
+                profile = Path(directory) / "profile"
+                profile.write_text("user-db:user\n")
+                env["DCONF_PROFILE"] = str(profile)
+                subprocess.run(["dconf", "load", "/"], input=payload, env=env, check=True)
         print("[OK] Imported dconf")
