@@ -3,9 +3,9 @@ name: Flatpak preview
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [plus-4.1]
   pull_request:
-    branches: [main]
+    branches: [plus-4.1]
 
 permissions:
   contents: read
