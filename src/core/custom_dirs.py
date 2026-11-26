@@ -167,15 +167,17 @@ def is_persistent_destination(path):
     # A writable placeholder in the Flatpak sandbox can disappear on exit.
     # Bound host directories and Document Portal mounts have their own mounts.
     filesystem = None
-    depth = -1
+    selected_mount = Path("/")
     for line in Path("/proc/self/mountinfo").read_text().splitlines():
         mount, fs = line.split(" - ", 1)
         raw = mount.split()[4]
         mountpoint = Path(re.sub(r"\\([0-7]{3})", lambda match: chr(int(match[1], 8)), raw))
-        if path.is_relative_to(mountpoint) and len(mountpoint.parts) >= depth:
-            depth = len(mountpoint.parts)
+        if path.is_relative_to(mountpoint) and len(mountpoint.parts) >= len(selected_mount.parts):
+            selected_mount = mountpoint
             filesystem = fs.split()[0]
-    return filesystem is not None and filesystem not in ("tmpfs", "ramfs")
+    # Flatpak may bind a private on-disk directory at /tmp, so its filesystem
+    # type alone cannot establish that a directory is visible on the host.
+    return selected_mount != Path("/tmp") and filesystem not in (None, "tmpfs", "ramfs")
 
 
 def check_destination(value):
