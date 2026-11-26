@@ -2,7 +2,7 @@ import os, shutil, subprocess, json, glob
 from gi.repository import GLib
 from savedesktop.globals import *
 from savedesktop.core.custom_dirs import enabled_folders, save_custom_folders, read_folder_metadata, validate_folder_plan
-from savedesktop.core.backup_input import restore_tar, restore_tree
+from savedesktop.core.backup_input import restore_file, restore_tar, restore_tree
 from savedesktop.core.wallpaper import save_wallpaper, restore_wallpaper
 from pathlib import Path
 from datetime import date
@@ -51,18 +51,18 @@ def save_icons():
 def import_icons():
     if os.path.exists("General"):
         if os.path.exists("General/icon-themes.tgz"):
-            restore_tar("General/icon-themes.tgz", home / ".local/share")
+            restore_tar("General/icon-themes.tgz", home / ".local/share/icons", single_folder=True)
 
         if os.path.exists("General/icon-themes-legacy.tgz"):
-            restore_tar("General/icon-themes-legacy.tgz", home)
+            restore_tar("General/icon-themes-legacy.tgz", home / ".icons", single_folder=True)
 
         print("[OK] Importing icons")
     else:
         if os.path.exists("icon-themes.tgz"):
-            restore_tar("icon-themes.tgz", home / ".local/share")
+            restore_tar("icon-themes.tgz", home / ".local/share/icons", single_folder=True)
 
         if os.path.exists("icon-themes-legacy.tgz"):
-            restore_tar("icon-themes-legacy.tgz", home)
+            restore_tar("icon-themes-legacy.tgz", home / ".icons", single_folder=True)
 
         print("[OK] Importing icons")
 
@@ -143,14 +143,12 @@ def save_bookmarks():
         safe_copy(f"{home}/.config/gtk-3.0/bookmarks", "General/gtk-3.0/bookmarks")
 
 def import_bookmarks():
-    if os.path.exists("General"):
-        safe_copytree("General/gtk-4.0", f"{home}/.config/gtk-4.0", )
-        if settings["save-bookmarks"]:
-            safe_copy("General/gtk-3.0/bookmarks", f"{home}/.config/gtk-3.0/bookmarks")
-    else:
-        safe_copytree("gtk-4.0", f"{home}/.config/gtk-4.0", )
-        if settings["save-bookmarks"]:
-            safe_copy("gtk-3.0/bookmarks", f"{home}/.config/gtk-3.0/bookmarks")
+    root = Path("General") if Path("General").is_dir() else Path(".")
+    restore_optional(root / "gtk-4.0", home / ".config/gtk-4.0")
+    source = root / "gtk-3.0/bookmarks"
+    if settings["save-bookmarks"] and source.is_file():
+        restore_file(source, home / ".config/gtk-3.0/bookmarks")
+
 
 # ------------------------
 # Desktop folder
@@ -172,7 +170,7 @@ def import_desktop_folder():
     root = Path("General") if Path("General").is_dir() else Path(".")
     archive = root / "desktop-folder.tgz"
     if archive.is_file():
-        restore_tar(archive, desktop_dir.parent)
+        restore_tar(archive, desktop_dir, single_folder=True)
         restore_optional(root / "gvfs-metadata", home / ".local/share/gvfs-metadata")
         print("[OK] Restored Desktop folder")
 

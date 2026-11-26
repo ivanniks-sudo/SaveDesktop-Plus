@@ -144,18 +144,30 @@ def restore_tree(source, destination):
         elif entry.is_dir():
             restore_tree(entry, target)
         else:
-            # Atomic replacement also avoids overwriting a pre-existing hard link.
-            with tempfile.NamedTemporaryFile(dir=destination, delete=False) as output:
-                temporary = Path(output.name)
-            try:
-                shutil.copy2(entry, temporary)
-                temporary.replace(target)
-            finally:
-                temporary.unlink(missing_ok=True)
+            restore_file(entry, target)
 
 
-def restore_tar(source, destination):
+def restore_file(source, destination):
+    destination = Path(destination)
+    if Path(source).is_symlink() or any(path.is_symlink() for path in (destination, *destination.parents)):
+        raise ValueError(f"Symbolic link in file restore: {destination}")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(dir=destination.parent, delete=False) as output:
+        temporary = Path(output.name)
+    try:
+        shutil.copy2(source, temporary)
+        temporary.replace(destination)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def restore_tar(source, destination, *, single_folder=False):
     with tempfile.TemporaryDirectory(prefix="restore-tar-") as temporary:
         staging = Path(temporary)
         extract_tar(source, staging)
+        if single_folder:
+            sections = list(staging.iterdir())
+            if len(sections) != 1 or not sections[0].is_dir() or sections[0].is_symlink():
+                raise ValueError("Expected a single directory in the nested archive.")
+            staging = sections[0]
         restore_tree(staging, destination)

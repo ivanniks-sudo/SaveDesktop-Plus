@@ -45,7 +45,7 @@ def image_path(settings):
 
 
 def save_wallpaper(dump, folders):
-    ignored, settings = split_wallpaper(dump.read_text(encoding="utf-8"))
+    other_settings, settings = split_wallpaper(dump.read_text(encoding="utf-8"))
     image = image_path(settings)
     if image is None:
         return
@@ -90,8 +90,8 @@ def restore_wallpaper(settings, folders, plan, home, flatpak):
             image = Path("General/Wallpaper") / name
             if image.is_file() and not image.is_symlink():
                 target = home / ".local/share/backgrounds/SaveDesktopPlus"
-                from savedesktop.core.backup_input import restore_tree
-                restore_tree(image.parent, target)
+                from savedesktop.core.backup_input import restore_file
+                restore_file(image, target / name)
                 path = target / name
         elif data.get("folder") in plan:
             relative = Path(data["relative"])
