@@ -424,7 +424,7 @@ class Import:
             print(f"[WARN] Unknown DE: {environment_key}")
 
         if wallpaper and options.get("wallpaper", settings["save-backgrounds"]):
-            restored = restore_wallpaper(wallpaper, folders, plan, home, flatpak)
+            restored = restore_wallpaper(wallpaper, folders, plan, home, flatpak, DATA)
             if restored:
                 dump = Path("General/dconf-settings.ini") if Path("General").is_dir() else Path("dconf-settings.ini")
                 with dump.open("a", encoding="utf-8") as file:

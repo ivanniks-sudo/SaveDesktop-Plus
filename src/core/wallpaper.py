@@ -10,7 +10,7 @@ from urllib.parse import unquote, urlsplit
 
 from gi.repository import GLib
 
-from savedesktop.core.custom_dirs import original_path
+from savedesktop.core.custom_dirs import check_destination, original_path
 
 _ = translation("savedesktop", localedir=os.getenv("SAVEDESKTOP_LOCALE"), fallback=True).gettext
 
@@ -70,7 +70,7 @@ def save_wallpaper(dump, folders):
     Path("General/Wallpaper.json").write_text(json.dumps(location, ensure_ascii=False), encoding="utf-8")
 
 
-def restore_wallpaper(settings, folders, plan, home, flatpak):
+def restore_wallpaper(settings, folders, plan, home, flatpak, data_dir):
     source = image_path(settings)
     if source is None:
         if "picture-uri=" in settings:
@@ -90,6 +90,10 @@ def restore_wallpaper(settings, folders, plan, home, flatpak):
             image = Path("General/Wallpaper") / name
             if image.is_file() and not image.is_symlink():
                 target = home / ".local/share/backgrounds/SaveDesktopPlus"
+                try:
+                    check_destination(str(target))
+                except ValueError:
+                    target = check_destination(str(Path(data_dir) / "wallpapers"))
                 from savedesktop.core.backup_input import restore_file
                 restore_file(image, target / name)
                 path = target / name
