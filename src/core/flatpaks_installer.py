@@ -2,7 +2,10 @@
 import os, subprocess, shutil, json, time
 from pathlib import Path
 
-CACHE_FLATPAK = f"{Path.home()}/.var/app/io.github.ivanniks_sudo.SaveDesktopPlus/cache/tmp/workspace"
+APP_ID = "io.github.ivanniks_sudo.SaveDesktopPlus"
+UPSTREAM_ID = "io.github.vikdevelop.SaveDesktop"
+PROTECTED_APPS = {APP_ID, UPSTREAM_ID}
+CACHE_FLATPAK = f"{Path.home()}/.var/app/{APP_ID}/cache/tmp/workspace"
 
 # Check Desktop Environment
 desktop_env = os.getenv("XDG_CURRENT_DESKTOP")
@@ -43,7 +46,7 @@ if dest_dir:
                         if 'flatpak' in line and 'install' in line:
                             parts = line.split()
                             app_id = next((p for p in parts if "." in p and not p.startswith("-")), None)
-                            if app_id and app_id not in disabled_flatpaks:
+                            if app_id and app_id != APP_ID and app_id not in disabled_flatpaks:
                                 desired_flatpaks[app_id] = "--user" if "--user" in parts else "--system"
 
     installed_apps = {}
@@ -54,7 +57,12 @@ if dest_dir:
                     installed_apps[app] = method
 
     apps_to_install = {app: method for app, method in desired_flatpaks.items() if app not in installed_apps}
-    apps_to_remove = {app: method for app, method in installed_apps.items() if app not in desired_flatpaks} if not keep_flatpaks else {}
+    apps_to_remove = {}
+    if not keep_flatpaks:
+        apps_to_remove = {
+            app: method for app, method in installed_apps.items()
+            if app not in desired_flatpaks and app not in PROTECTED_APPS
+        }
 
     # Calculate exact total steps
     total_steps = 0
@@ -81,11 +89,15 @@ if dest_dir:
         if copy_data:
             print("[COPY] Copying the Flatpak's user data to ~/.var/app", flush=True)
             if os.path.exists("app"):
-                os.system("cp -au ./app/ ~/.var/")
+                target = Path.home() / ".var/app"
+                target.mkdir(parents=True, exist_ok=True)
+                for entry in Path("app").iterdir():
+                    if entry.name not in PROTECTED_APPS:
+                        subprocess.run(["cp", "-au", "--", str(entry), str(target)])
             archive_file = "Flatpak_Apps/flatpak-apps-data.tgz" if os.path.exists("Flatpak_Apps/flatpak-apps-data.tgz") else "flatpak-apps-data.tgz"
             if os.path.exists(archive_file):
                 tar_cmd = ["tar", "-xzf", archive_file, "-C", f"{Path.home()}/.var"]
-                for d_app in disabled_flatpaks:
+                for d_app in sorted(set(disabled_flatpaks) | PROTECTED_APPS):
                     tar_cmd.extend([f"--exclude={d_app}", f"--exclude=app/{d_app}"])
                 subprocess.run(tar_cmd)
             print("✔ Copied Flatpak's user data", flush=True)
@@ -118,7 +130,7 @@ if dest_dir:
             user_var_app = Path.home() / ".var/app"
             if user_var_app.exists():
                 for app_dir in user_var_app.iterdir():
-                    if app_dir.is_dir() and app_dir.name not in desired_flatpaks:
+                    if app_dir.is_dir() and app_dir.name not in desired_flatpaks and app_dir.name not in PROTECTED_APPS:
                         print(f"  -> Deleted: {app_dir.name}", flush=True)
                         shutil.rmtree(app_dir)
             print("[OK] All useless apps and orphaned data have been removed", flush=True)
@@ -130,6 +142,6 @@ else:
     print("There's no need to install any new apps, since they're all available on your system.", flush=True)
 
 # Remove the autostart file after finishing the operations
-autostart_file = f"{Path.home()}/.config/autostart/io.github.ivanniks_sudo.SaveDesktopPlus.Flatpak.desktop"
+autostart_file = f"{Path.home()}/.config/autostart/{APP_ID}.Flatpak.desktop"
 if os.path.exists(autostart_file):
     os.remove(autostart_file)
