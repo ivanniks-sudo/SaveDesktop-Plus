@@ -5,6 +5,7 @@ from savedesktop.core.password_store import PasswordStore
 from savedesktop.core.de_config import Save, Import
 from savedesktop.core.backup_input import prepare_backup
 from savedesktop.core.wallpaper import split_wallpaper
+from savedesktop.core.desktop_configuration import filter_desktop_settings
 
 TEMP_CACHE = f"{CACHE}/workspace"
 temp_file = f"{CACHE}/temp_file"
@@ -78,6 +79,7 @@ class Create:
 
 class Unpack:
     def __init__(self, dir_path, options=None):
+        options = options or {}
         previous = Path.cwd()
         try:
             with prepare_backup(dir_path, password, parent=CACHE) as root:
@@ -87,9 +89,9 @@ class Unpack:
                 wallpaper = ""
                 if environment and environment["de_name"] == "Cinnamon":
                     other, wallpaper = split_wallpaper(dump.read_text(encoding="utf-8"))
-                    dump.write_text(other, encoding="utf-8")
+                    dump.write_text(filter_desktop_settings(other, options.get("desktop_configuration", True)), encoding="utf-8")
                 self._replace_home_in_files(".", home)
-                Import(options or {}, wallpaper)
+                Import(options, wallpaper)
         finally:
             os.chdir(previous)
             remove_temp_file()

@@ -13,6 +13,7 @@ class itemsDialog(Adw.AlertDialog):
         super().__init__()
         self.parent = parent
         self.restoring = items_list is not None
+        cinnamon_restore = self.restoring and environment and environment["de_name"] == "Cinnamon"
         self.items_list = items_list if items_list is not None else []
 
         self.set_heading(_("Select configuration items"))
@@ -73,14 +74,14 @@ class itemsDialog(Adw.AlertDialog):
             self.itemsBox.append(child=self.fonts_row)
         
         # Switch and row of option 'Save backgrounds'
-        self.switch_04 = Gtk.Switch.new()
+        self.switch_04 = Gtk.CheckButton.new() if cinnamon_restore else Gtk.Switch.new()
         if settings["save-backgrounds"]:
             self.switch_04.set_active(True)
         self.switch_04.set_valign(align=Gtk.Align.CENTER)
          
         self.backgrounds_row = Adw.ActionRow.new()
         self.backgrounds_row.set_title(title=(
-            _("Restore desktop wallpaper") if self.restoring and environment and environment["de_name"] == "Cinnamon"
+            _("Restore desktop wallpaper") if cinnamon_restore
             else _("Backgrounds")
         ))
         self.backgrounds_row.set_use_markup(True)
@@ -88,7 +89,7 @@ class itemsDialog(Adw.AlertDialog):
         self.backgrounds_row.set_subtitle_lines(3)
         self.backgrounds_row.add_suffix(self.switch_04)
         self.backgrounds_row.set_activatable_widget(self.switch_04)
-        if self.should_show("backgrounds", "wallpapers", "Wallpaper.json") or (self.restoring and environment and environment["de_name"] == "Cinnamon"):
+        if self.should_show("backgrounds", "wallpapers", "Wallpaper.json") or cinnamon_restore:
             self.itemsBox.append(child=self.backgrounds_row)
         
         # show extension switch and row if user has installed these environments
@@ -113,8 +114,15 @@ class itemsDialog(Adw.AlertDialog):
             if self.should_show("gtk-3.0"):
                 self.itemsBox.append(child=self.gtk_row)
 
+        if cinnamon_restore:
+            configuration = Adw.ActionRow(title=_("Restore desktop configuration"))
+            self.desktop_configuration = Gtk.CheckButton(active=True, valign=Gtk.Align.CENTER)
+            configuration.add_suffix(self.desktop_configuration)
+            configuration.set_activatable_widget(self.desktop_configuration)
+            self.itemsBox.append(configuration)
+
         # Switch and row of option 'Save Desktop' (~/Desktop)
-        self.switch_de = Gtk.Switch.new()
+        self.switch_de = Gtk.CheckButton.new() if cinnamon_restore else Gtk.Switch.new()
         if settings["save-desktop-folder"]:
             self.switch_de.set_active(True)
         self.switch_de.set_valign(align=Gtk.Align.CENTER)
@@ -127,7 +135,11 @@ class itemsDialog(Adw.AlertDialog):
         self.desktop_row.set_title_lines(2)
         self.desktop_row.add_suffix(self.switch_de)
         self.desktop_row.set_activatable_widget(self.switch_de)
-        if self.should_show("desktop-folder.tgz"):
+        has_desktop_contents = self.should_show("desktop-folder.tgz")
+        if cinnamon_restore and not has_desktop_contents:
+            self.switch_de.set_active(False)
+            self.desktop_row.set_sensitive(False)
+        if has_desktop_contents or cinnamon_restore:
             self.itemsBox.append(child=self.desktop_row)
 
         # Custom directories section
@@ -296,8 +308,9 @@ class itemsDialog(Adw.AlertDialog):
             settings["save-icons"] = self.switch_01.get_active()
             settings["save-themes"] = self.switch_02.get_active()
             settings["save-fonts"] = self.switch_03.get_active()
-            settings["save-backgrounds"] = self.switch_04.get_active()
-            settings["save-desktop-folder"] = self.switch_de.get_active()
+            if not self.restoring:
+                settings["save-backgrounds"] = self.switch_04.get_active()
+                settings["save-desktop-folder"] = self.switch_de.get_active()
             settings["enable-custom-dirs"] = self.custom_switch.get_active()
             if hasattr(self, "switch_gtk"):
                 settings["save-bookmarks"] = self.switch_gtk.get_active()

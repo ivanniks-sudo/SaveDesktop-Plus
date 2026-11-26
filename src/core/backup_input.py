@@ -122,7 +122,7 @@ def prepare_backup(source, password=None, *, parent=None):
         yield root
 
 
-def restore_tree(source, destination):
+def restore_tree(source, destination, *, exclude=()):
     """Merge files without following existing links in destination directories."""
     source = Path(source)
     if source.is_symlink():
@@ -132,6 +132,8 @@ def restore_tree(source, destination):
         raise ValueError(f"Restore destination is a symbolic link: {destination}")
     destination.mkdir(parents=True, exist_ok=True)
     for entry in Path(source).iterdir():
+        if entry.name in exclude:
+            continue
         target = destination / entry.name
         if entry.is_symlink() and target.is_symlink() and entry.readlink() == target.readlink():
             continue

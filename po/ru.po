@@ -685,3 +685,7 @@ msgstr "Не удалось включить изображение обоев �
 
 msgid "Wallpaper was kept because the saved image is unavailable."
 msgstr "Текущие обои сохранены, поскольку изображение из резервной копии недоступно."
+
+#: src/gui/items_dialog.py
+msgid "Restore desktop configuration"
+msgstr "Восстановить конфигурацию рабочего стола"

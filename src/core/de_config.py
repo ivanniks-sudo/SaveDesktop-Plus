@@ -1,9 +1,10 @@
 import os, shutil, subprocess, json, glob
 from gi.repository import GLib
 from savedesktop.globals import *
-from savedesktop.core.custom_dirs import enabled_folders, save_custom_folders, read_folder_metadata, validate_folder_plan
+from savedesktop.core.custom_dirs import enabled_folders, original_path, save_custom_folders, read_folder_metadata, validate_folder_plan
 from savedesktop.core.backup_input import restore_file, restore_tar, restore_tree
 from savedesktop.core.wallpaper import save_wallpaper, restore_wallpaper
+from savedesktop.core.desktop_configuration import NEMO_FILE, save_desktop_configuration, restore_desktop_configuration
 from pathlib import Path
 from datetime import date
 
@@ -157,21 +158,27 @@ def import_bookmarks():
 desktop_dir = Path(GLib.get_user_special_dir(GLib.UserDirectory.DIRECTORY_DESKTOP))
 
 def save_desktop_folder():
+    if desktop_dir == home:
+        raise ValueError("The desktop location is the whole home directory.")
     subprocess.run([
         "tar", "-czf", "General/desktop-folder.tgz",
         "-C", str(desktop_dir.parent),
         desktop_dir.name
     ], check=True)
 
-    safe_copytree(f"{home}/.local/share/gvfs-metadata", "General/gvfs-metadata")
+    if not environment or environment["de_name"] != "Cinnamon":
+        safe_copytree(f"{home}/.local/share/gvfs-metadata", "General/gvfs-metadata")
     print("[OK] Saving Desktop folder")
 
 def import_desktop_folder():
     root = Path("General") if Path("General").is_dir() else Path(".")
     archive = root / "desktop-folder.tgz"
     if archive.is_file():
+        if desktop_dir == home:
+            raise ValueError("The desktop location is the whole home directory.")
         restore_tar(archive, desktop_dir, single_folder=True)
-        restore_optional(root / "gvfs-metadata", home / ".local/share/gvfs-metadata")
+        if not environment or environment["de_name"] != "Cinnamon":
+            restore_optional(root / "gvfs-metadata", home / ".local/share/gvfs-metadata")
         print("[OK] Restored Desktop folder")
 
 
@@ -333,8 +340,10 @@ class Save:
             print(f"[WARN] Unknown DE: {environment_key}")
 
         self.save_dconf()
-        if environment and environment["de_name"] == "Cinnamon" and settings["save-backgrounds"]:
-            save_wallpaper(Path("General/dconf-settings.ini"), self.folders)
+        if environment and environment["de_name"] == "Cinnamon":
+            save_desktop_configuration(home / ".config/nemo")
+            if settings["save-backgrounds"]:
+                save_wallpaper(Path("General/dconf-settings.ini"), self.folders)
 
     def save_dconf(self):
         with open("General/dconf-settings.ini", "wb") as dump:
@@ -375,9 +384,9 @@ class Save:
 # Import pipeline
 # ------------------------
 
-def restore_optional(source, destination):
+def restore_optional(source, destination, *, exclude=()):
     if Path(source).is_dir():
-        restore_tree(source, destination)
+        restore_tree(source, destination, exclude=exclude)
 
 
 class Import:
@@ -386,9 +395,28 @@ class Import:
         folders = read_folder_metadata(Path.cwd())
         plan = options.get("folders", {})
         validate_folder_plan(folders, plan)
+        cinnamon = bool(environment and environment["de_name"] == "Cinnamon")
+        restore_background = options.get("wallpaper", settings["save-backgrounds"])
+        restore_contents = options.get("desktop_contents", settings["save-desktop-folder"])
+        restore_configuration = options.get("desktop_configuration", True)
+        protected = []
+        if not restore_contents and desktop_dir != home:
+            protected.append(desktop_dir)
+        if cinnamon:
+            protected.append(home / ".local/share/gvfs-metadata")
+            if not restore_configuration:
+                protected.append(home / ".config/nemo" / NEMO_FILE)
+
+        for destination in plan.values():
+            location = original_path(destination, flatpak=flatpak)
+            if location and any(Path(location).is_relative_to(path) or path.is_relative_to(location)
+                                for path in protected):
+                raise ValueError(f"Custom restore destination overlaps a protected desktop location: {location}")
+
         # General dirs (reverse copy)
-        for item in GENERAL_ITEMS.values():
-            if settings[item["key"]]:
+        for name, item in GENERAL_ITEMS.items():
+            enabled = restore_background if name == "backgrounds" else settings[item["key"]]
+            if enabled:
                 for src, dst in item["dirs"]:
                     if os.path.exists("General"):
                         restore_optional(os.path.join("General", dst), src)
@@ -396,8 +424,9 @@ class Import:
                         restore_optional(dst, src)
 
         # Special handlers
-        for item in SPECIAL_ITEMS.values():
-            if settings[item["key"]]:
+        for name, item in SPECIAL_ITEMS.items():
+            enabled = restore_contents if name == "desktop" else settings[item["key"]]
+            if enabled:
                 item["import"]()
 
         for source, destination in plan.items():
@@ -416,20 +445,21 @@ class Import:
             else:
                 print(f"Importing environment-specific config for: {environment['de_name']}")
                 for src, dst in environment["dirs"]:
-                    if os.path.exists("DE"):
-                        restore_optional(os.path.join("DE", dst), src)
-                    else:
-                        restore_optional(dst, src)
+                    source = Path("DE") / dst if Path("DE").is_dir() else Path(dst)
+                    excluded = (NEMO_FILE,) if cinnamon and dst == "nemo" else ()
+                    restore_optional(source, src, exclude=excluded)
         else:
             print(f"[WARN] Unknown DE: {environment_key}")
 
-        if wallpaper and options.get("wallpaper", settings["save-backgrounds"]):
+        if wallpaper and restore_background:
             restored = restore_wallpaper(wallpaper, folders, plan, home, flatpak, DATA)
             if restored:
                 dump = Path("General/dconf-settings.ini") if Path("General").is_dir() else Path("dconf-settings.ini")
                 with dump.open("a", encoding="utf-8") as file:
                     file.write("\n" + restored)
         self.import_dconf()
+        if cinnamon and restore_configuration:
+            restore_desktop_configuration(home / ".config/nemo")
 
     def import_dconf(self):
         import subprocess

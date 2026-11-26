@@ -569,6 +569,9 @@ class MainWindow(Adw.ApplicationWindow):
             self._finish_folder_plan(None)
             return
         self.restore_options["wallpaper"] = dialog.switch_04.get_active()
+        self.restore_options["desktop_contents"] = dialog.switch_de.get_active()
+        if hasattr(dialog, "desktop_configuration"):
+            self.restore_options["desktop_configuration"] = dialog.desktop_configuration.get_active()
         if self.restore_folders and dialog.custom_switch.get_active():
             RestoreFoldersDialog(
                 self, self.restore_folders, bool(environment and environment["de_name"] == "Cinnamon"),
