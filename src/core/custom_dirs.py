@@ -160,6 +160,24 @@ def folder_destination(entry, home, cinnamon):
     return entry.get("original_path") or ""
 
 
+def is_persistent_destination(path):
+    if not Path("/.flatpak-info").is_file():
+        return True
+
+    # A writable placeholder in the Flatpak sandbox can disappear on exit.
+    # Bound host directories and Document Portal mounts have their own mounts.
+    filesystem = None
+    depth = -1
+    for line in Path("/proc/self/mountinfo").read_text().splitlines():
+        mount, fs = line.split(" - ", 1)
+        raw = mount.split()[4]
+        mountpoint = Path(re.sub(r"\\([0-7]{3})", lambda match: chr(int(match[1], 8)), raw))
+        if path.is_relative_to(mountpoint) and len(mountpoint.parts) >= depth:
+            depth = len(mountpoint.parts)
+            filesystem = fs.split()[0]
+    return filesystem is not None and filesystem not in ("tmpfs", "ramfs")
+
+
 def check_destination(value):
     path = Path(value)
     if not path.is_absolute() or not path.name or ".." in path.parts:
@@ -171,6 +189,8 @@ def check_destination(value):
         if ancestor.exists():
             if not ancestor.is_dir() or not os.access(ancestor, os.W_OK | os.X_OK):
                 raise ValueError(f"Destination is not writable: {ancestor}")
+            if not is_persistent_destination(ancestor):
+                raise ValueError("Choose a destination exposed by Flatpak or Document Portal.")
             return path
     raise ValueError("Destination is not accessible.")
 
