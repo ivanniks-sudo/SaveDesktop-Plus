@@ -1,9 +1,17 @@
-name: CI
+name: Flatpak preview
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  APP_ID: io.github.ivanniks_sudo.SaveDesktopPlus
 
 jobs:
   build:
@@ -11,30 +19,39 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
-
-      - name: Validate AppStream metainfo
-        run: |
-          appstreamcli validate data/io.github.vikdevelop.SaveDesktop.metainfo.xml.in
+        uses: actions/checkout@v4
 
       - name: Install dependencies
         run: |
-          sudo apt update
-          sudo apt install -y flatpak flatpak-builder appstream
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder appstream desktop-file-utils
+
+      - name: Validate application metadata
+        run: |
+          appstreamcli validate --no-net "data/${APP_ID}.metainfo.xml.in"
+          glib-compile-schemas --strict --dry-run data
 
       - name: Install GNOME Platform and SDK
         run: |
           flatpak remote-add --if-not-exists --user flathub https://flathub.org/repo/flathub.flatpakrepo
-          flatpak install --user -y flathub org.gnome.Platform//50
-          flatpak install --user -y flathub org.gnome.Sdk//50
+          flatpak install --user -y flathub org.gnome.Platform//50 org.gnome.Sdk//50
 
-      - name: Build Flatpak
+      - name: Build and verify x86_64 preview
         run: |
-          flatpak-builder --force-clean --sandbox --repo=sdrepo build io.github.vikdevelop.SaveDesktop.json
-          flatpak build-bundle sdrepo io.github.vikdevelop.SaveDesktop.flatpak io.github.vikdevelop.SaveDesktop
+          flatpak-builder --arch=x86_64 --default-branch=preview --force-clean --sandbox --repo=sdrepo build "${APP_ID}.json"
+          desktop-file-validate "build/files/share/applications/${APP_ID}.desktop"
+          test -x build/files/bin/savedesktop-plus
+          test -f "build/files/share/glib-2.0/schemas/${APP_ID}.gschema.xml"
+          test -f "build/files/share/icons/hicolor/scalable/apps/${APP_ID}.svg"
+          test -f "build/files/share/metainfo/${APP_ID}.metainfo.xml"
+          flatpak build-bundle --arch=x86_64 sdrepo SaveDesktop-Plus-x86_64-preview.flatpak "$APP_ID" preview
+          sha256sum SaveDesktop-Plus-x86_64-preview.flatpak > SHA256SUMS
 
-      - name: Upload Flatpak artifact
+      - name: Upload preview bundle
         uses: actions/upload-artifact@v4
         with:
-          name: SaveDesktop-flatpak
-          path: io.github.vikdevelop.SaveDesktop.flatpak
+          name: SaveDesktop-Plus-x86_64-preview
+          path: |
+            SaveDesktop-Plus-x86_64-preview.flatpak
+            SHA256SUMS
+          if-no-files-found: error

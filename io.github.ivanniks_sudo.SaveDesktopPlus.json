@@ -1,10 +1,9 @@
 {
-    "app-id" : "io.github.vikdevelop.SaveDesktop",
-    "desktop-file-name-suffix" : " (Development)",
+    "app-id" : "io.github.ivanniks_sudo.SaveDesktopPlus",
     "runtime" : "org.gnome.Platform",
     "runtime-version" : "50",
     "sdk" : "org.gnome.Sdk",
-    "command" : "savedesktop",
+    "command" : "savedesktop-plus",
     "finish-args" : [
         "--share=ipc",
         "--socket=wayland",
