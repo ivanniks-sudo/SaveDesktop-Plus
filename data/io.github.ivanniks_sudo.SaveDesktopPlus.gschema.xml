@@ -65,6 +65,10 @@
 	    <default>{}</default>
 	    <summary>Last known original locations of custom directories</summary>
 	  </key>
+	  <key name="cinnamon-spices-initialized" type="b">
+	    <default>false</default>
+	    <summary>Whether the first Cinnamon Spices check was performed</summary>
+	</key>
 	  <key name="enable-custom-dirs" type="b">
 	    <default>false</default>
 	    <summary>Enable/Disable custom directories</summary>

@@ -4,10 +4,12 @@ data/io.github.ivanniks_sudo.SaveDesktopPlus.desktop.in
 data/io.github.ivanniks_sudo.SaveDesktopPlus.metainfo.xml.in
 data/io.github.ivanniks_sudo.SaveDesktopPlus.gschema.xml
 src/core/synchronization.py
+src/core/wallpaper.py
 src/gui/custom_dirs_dialog.py
 src/gui/more_options_dialog.py
 src/gui/items_dialog.py
 src/gui/password_checker.py
+src/gui/restore_folders_dialog.py
 src/gui/synchronization_dialogs.py
 src/gui/templates/shortcuts_window.ui
 src/gui/window.py

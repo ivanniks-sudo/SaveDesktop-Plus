@@ -646,3 +646,42 @@ msgstr "У выбранной папки нет локального пути."
 #: src/gui/custom_dirs_dialog.py
 msgid "Could not select folder"
 msgstr "Не удалось выбрать папку"
+
+msgid "Restore custom folders"
+msgstr "Восстановление пользовательских папок"
+
+msgid "Confirm a destination for each selected folder. Hidden folders: Ctrl+H in the file chooser."
+msgstr "Подтвердите путь для каждой выбранной папки. Нажмите Ctrl+H в диалоге выбора, чтобы показать скрытые папки."
+
+msgid "Restore"
+msgstr "Восстановить"
+
+msgid "Destination folder"
+msgstr "Папка назначения"
+
+msgid "Choose a writable destination folder."
+msgstr "Выберите папку, доступную для записи."
+
+msgid "This folder will be created."
+msgstr "Эта папка будет создана."
+
+msgid "Access granted to the selected folder. Its original location is unavailable."
+msgstr "Доступ к выбранной папке предоставлен. Исходное расположение неизвестно."
+
+msgid "Each selected folder needs a different writable destination."
+msgstr "Для каждой выбранной папки укажите отдельный путь с доступом на запись."
+
+msgid "Restore desktop wallpaper"
+msgstr "Восстановить обои рабочего стола"
+
+msgid "Restore desktop contents"
+msgstr "Восстановить содержимое рабочего стола"
+
+msgid "Backup notice"
+msgstr "Сообщение о резервной копии"
+
+msgid "The wallpaper image could not be included in the backup."
+msgstr "Не удалось включить изображение обоев в резервную копию."
+
+msgid "Wallpaper was kept because the saved image is unavailable."
+msgstr "Текущие обои сохранены, поскольку изображение из резервной копии недоступно."

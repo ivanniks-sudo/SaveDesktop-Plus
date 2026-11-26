@@ -3,6 +3,7 @@ gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
 from gi.repository import Gtk, Adw, Gio, GLib
 from savedesktop.gui.window import MainWindow
+from savedesktop.core.custom_dirs import initialize_cinnamon_spices
 from savedesktop.gui.items_dialog import itemsDialog
 from savedesktop.globals import *
 
@@ -125,6 +126,8 @@ class SaveDesktopApp(Adw.Application):
 
     # Show the main window of the application
     def on_activate(self, app):
+        if environment and environment["de_name"] == "Cinnamon":
+            initialize_cinnamon_spices(settings, home)
         self.win = MainWindow(application=app)
         self.win.present()
 

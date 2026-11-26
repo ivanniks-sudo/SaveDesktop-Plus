@@ -185,3 +185,18 @@ def validate_folder_plan(entries, plan):
         if path in destinations:
             raise ValueError(f"Multiple folders use the same destination: {path}")
         destinations.add(path)
+
+
+
+def initialize_cinnamon_spices(settings, home):
+    if settings["cinnamon-spices-initialized"]:
+        return
+    folder = home / ".config/cinnamon/spices"
+    paths = settings.get_strv("custom-dirs")
+    known = settings["custom-dir-original-paths"]
+    if folder.is_dir() and os.access(folder, os.R_OK | os.X_OK):
+        if not any(os.path.realpath(known.get(path, access_path(path))) == str(folder.resolve()) for path in paths):
+            settings.set_strv("custom-dirs", [*paths, str(folder)])
+            if settings.get_user_value("enable-custom-dirs") is None:
+                settings["enable-custom-dirs"] = True
+    settings["cinnamon-spices-initialized"] = True
