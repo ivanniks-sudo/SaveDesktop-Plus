@@ -21,6 +21,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Test selective ZIP restore
+        run: PYTHONPATH=src/core python3 -m unittest discover -s tests -v
+
       - name: Install dependencies
         run: |
           sudo apt-get update
