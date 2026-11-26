@@ -2,7 +2,7 @@ import os, shutil, subprocess, json, glob, tempfile
 from gi.repository import GLib
 from savedesktop.globals import *
 from savedesktop.core.custom_dirs import enabled_folders, original_path, save_custom_folders, read_folder_metadata, validate_folder_plan
-from savedesktop.core.backup_input import restore_file, restore_tar, restore_tree
+from savedesktop.core.backup_input import publish_directory, restore_file, restore_tar, restore_tree
 from savedesktop.core.wallpaper import save_wallpaper, restore_wallpaper
 from savedesktop.core.desktop_configuration import NEMO_FILE, save_desktop_configuration, restore_desktop_configuration
 from pathlib import Path
@@ -98,24 +98,24 @@ def create_flatpak_autostart(root):
     if not files and not copy_legacy:
         return
     workspace = Path(CACHE) / "workspace"
-    workspace.mkdir(exist_ok=True)
-    shutil.copy2(Path(__file__).with_name("flatpaks_installer.py"), workspace)
-    shutil.copy2(Path(__file__).with_name("backup_input.py"), workspace)
-    for name in ("Flatpak_Apps", "app", *lists, *data):
-        target = workspace / name
-        if target.is_dir() and not target.is_symlink():
-            shutil.rmtree(target)
-        else:
-            target.unlink(missing_ok=True)
-    destination = workspace / "Flatpak_Apps" if sources is flatpak_section else workspace
-    for source in files:
-        restore_file(source, destination / source.name)
-    if copy_legacy:
-        restore_tree(legacy_app, workspace / "app")
-
-    # Create a JSON file with the user's preferences for Flatpak apps
-    with open(f"{CACHE}/workspace/flatpak-prefs.json", "w") as fl:
-        json.dump({"keep-flatpaks": settings["keep-flatpaks"], "disabled-flatpaks": settings["disabled-flatpak-apps-data"], "install-flatpaks": settings["save-installed-flatpaks"], "copy-data": settings["save-flatpak-data"]}, fl)
+    with tempfile.TemporaryDirectory(prefix="flatpak-import-", dir=CACHE) as directory:
+        staging = Path(directory) / "new"
+        staging.mkdir()
+        shutil.copy2(Path(__file__).with_name("flatpaks_installer.py"), staging)
+        shutil.copy2(Path(__file__).with_name("backup_input.py"), staging)
+        destination = staging / "Flatpak_Apps" if sources is flatpak_section else staging
+        for source in files:
+            restore_file(source, destination / source.name)
+        if copy_legacy:
+            restore_tree(legacy_app, staging / "app")
+        with (staging / "flatpak-prefs.json").open("w") as prefs:
+            json.dump({
+                "keep-flatpaks": settings["keep-flatpaks"],
+                "disabled-flatpaks": settings["disabled-flatpak-apps-data"],
+                "install-flatpaks": settings["save-installed-flatpaks"],
+                "copy-data": settings["save-flatpak-data"],
+            }, prefs)
+        publish_directory(staging, workspace, Path(directory) / "previous")
 
     # Create an autostart file for post-login Flatpak installation
     os.makedirs(f"{home}/.config/autostart", exist_ok=True)
@@ -417,9 +417,6 @@ class Import:
             enabled = restore_contents if name == "desktop" else settings[item["key"]]
             if enabled:
                 item["import"](general)
-        if settings["save-installed-flatpaks"] or settings["save-flatpak-data"]:
-            create_flatpak_autostart(root)
-
         for source, destination in plan.items():
             restore_tree(root / source, Path(destination))
             print(f"[OK] Restored custom folder: {destination}")
@@ -447,6 +444,8 @@ class Import:
         self.import_dconf(dump)
         if cinnamon and restore_configuration:
             restore_desktop_configuration(root, home / ".config/nemo")
+        if settings["save-installed-flatpaks"] or settings["save-flatpak-data"]:
+            create_flatpak_autostart(root)
 
     def import_dconf(self, dump):
         env = os.environ.copy()

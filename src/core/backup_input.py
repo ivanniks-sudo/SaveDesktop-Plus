@@ -1,13 +1,13 @@
 """Read SaveDesktop backups and safely copy selected entries."""
+from collections import defaultdict
 from contextlib import contextmanager
-import re
 from pathlib import Path, PurePosixPath
+import re
 import shutil
 import stat
 import subprocess
 import tarfile
 import tempfile
-from collections import defaultdict
 import zipfile
 
 
@@ -205,8 +205,8 @@ def prepare_backup(source, password=None, *, parent=None):
         try:
             with zipfile.ZipFile(source) as archive:
                 yield backup_root(ZipPath(ZipBackup(archive, source, password)))
-        except (OSError, zipfile.BadZipFile, UnicodeError, NotImplementedError, RuntimeError, EOFError) as error:
-            raise ValueError(f"Cannot read ZIP backup: {error}") from error
+        except (OSError, zipfile.BadZipFile, tarfile.TarError, UnicodeError, NotImplementedError, RuntimeError, EOFError) as error:
+            raise ValueError(f"Cannot process ZIP backup: {error}") from error
         return
     with tempfile.TemporaryDirectory(prefix="restore-", dir=parent) as temporary:
         staging = Path(temporary)
@@ -294,3 +294,16 @@ def restore_tar(source, destination, *, single_folder=False):
                 raise ValueError("Expected a single directory in the nested archive.")
             staging = sections[0]
         restore_tree(staging, destination)
+
+
+
+def publish_directory(pending, destination, previous):
+    """Publish a complete sibling directory, rolling back a failed rename."""
+    try:
+        if destination.exists() or destination.is_symlink():
+            destination.rename(previous)
+        pending.rename(destination)
+    except BaseException:
+        if not (destination.exists() or destination.is_symlink()) and (previous.exists() or previous.is_symlink()):
+            previous.rename(destination)
+        raise

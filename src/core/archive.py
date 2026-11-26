@@ -3,7 +3,7 @@ from pathlib import Path
 from savedesktop.globals import *
 from savedesktop.core.password_store import PasswordStore
 from savedesktop.core.de_config import Save, Import
-from savedesktop.core.backup_input import HOME_PATH, ZipPath, prepare_backup
+from savedesktop.core.backup_input import HOME_PATH, ZipPath, prepare_backup, publish_directory
 from savedesktop.core.wallpaper import split_wallpaper
 from savedesktop.core.desktop_configuration import filter_desktop_settings
 
@@ -48,14 +48,7 @@ class Create:
             pending = Path(temporary) / "new"
             previous = Path(temporary) / "previous"
             shutil.copytree(source, pending, symlinks=True)
-            try:
-                if output.exists() or output.is_symlink():
-                    output.rename(previous)
-                pending.rename(output)
-            except BaseException:
-                if not (output.exists() or output.is_symlink()) and (previous.exists() or previous.is_symlink()):
-                    previous.rename(output)
-                raise
+            publish_directory(pending, output, previous)
 
     def _create_archive(self, output):
         with tempfile.TemporaryDirectory(prefix="zip-", dir=CACHE) as temporary:
