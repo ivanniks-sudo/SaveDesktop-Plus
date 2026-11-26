@@ -418,17 +418,27 @@ class Import:
         self.rec_dir.mkdir(parents=True, exist_ok=True)
 
     def import_dconf(self):
-        if flatpak:
-            if os.path.exists("General"):
-                os.system("dconf load / < ./General/dconf-settings.ini")
-            else:
-                os.system("dconf load / < ./dconf-settings.ini")
-        else:
-            os.system("echo user-db:user > temporary-profile")
+        import subprocess
 
-            if os.path.exists("General"):
-                os.system('DCONF_PROFILE="$(pwd)/temporary-profile" dconf load / < ./General/dconf-settings.ini')
-            else:
-                os.system('DCONF_PROFILE="$(pwd)/temporary-profile" dconf load / < ./dconf-settings.ini')
+        path = (
+            "./General/dconf-settings.ini"
+            if os.path.exists("General")
+            else "./dconf-settings.ini"
+        )
+
+        env = os.environ.copy()
+
+        if not flatpak:
+            with open("temporary-profile", "w") as profile:
+                profile.write("user-db:user\n")
+            env["DCONF_PROFILE"] = os.path.abspath("temporary-profile")
+
+        with open(path, "rb") as source:
+            subprocess.run(
+                ["dconf", "load", "/"],
+                stdin=source,
+                env=env,
+                check=True
+            )
 
         print("[OK] Imported dconf")

@@ -141,9 +141,9 @@ class Unpack:
     # Replace original /home/$USER path with actual path in the dconf-settings.ini file and other XML files
     def _replace_home_in_files(self, root, home, patterns=(".xml", ".ini")):
         # Define a regular expression as binary (prefix "b")
-        regex = re.compile(br"(?:/var)?/home/[^/]+/")
+        regex = re.compile(br"""(?:/var)?/home/[^/\s'"\\<>]+(?=/|['"<>\s]|$)""")
         # Convert the target path to bytes in UTF-8 encoding (which is the most common encoding for paths)
-        home_bytes = f"{home}/".encode("utf-8")
+        home_bytes = str(home).encode("utf-8")
 
         for dirpath, _, filenames in os.walk(root):
             for filename in filenames:
@@ -154,7 +154,7 @@ class Unpack:
                     with open(path, "rb") as f:
                         text_bytes = f.read()
 
-                    new_bytes = regex.sub(home_bytes, text_bytes)
+                    new_bytes = regex.sub(lambda _: home_bytes, text_bytes)
 
                     if new_bytes != text_bytes:
                         # Write in binary ("wb")— preserve the original structure
