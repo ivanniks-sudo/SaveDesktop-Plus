@@ -14,7 +14,7 @@ gnome.compile_resources(
   install_dir: pkgdatadir,
 )
 
-# === Configure wrapper (savedesktop.in -> savedesktop) ===
+# === Configure wrapper (savedesktop.in -> savedesktop-plus) ===
 conf = configuration_data()
 conf.set('PYTHON', python.find_installation('python3').full_path())
 conf.set('VERSION', meson.project_version())
@@ -23,7 +23,7 @@ conf.set('localedir', localedir)
 
 configure_file(
   input: 'savedesktop.in',
-  output: 'savedesktop',
+  output: 'savedesktop-plus',
   configuration: conf,
   install: true,
   install_dir: get_option('bindir'),

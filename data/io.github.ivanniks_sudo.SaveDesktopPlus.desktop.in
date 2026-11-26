@@ -1,7 +1,7 @@
 [Desktop Entry]
-Name=Save Desktop
+Name=SaveDesktop Plus
 Categories=Utility
 Comment=Save your desktop configuration
-Exec=savedesktop
+Exec=savedesktop-plus
 Type=Application
-Icon=io.github.vikdevelop.SaveDesktop
+Icon=io.github.ivanniks_sudo.SaveDesktopPlus

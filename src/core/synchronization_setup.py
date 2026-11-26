@@ -9,7 +9,7 @@ def check_fs(folder):
             if not os.path.exists(f"{folder}/.stfolder"):
                 return "You didn't select the cloud drive folder!"
 
-# Create the SaveDesktop.json file in the cloud drive folder, which contains periodic saving filename and interval
+# Create the SaveDesktopPlus.json file in the cloud drive folder, which contains periodic saving filename and interval
 def create_savedesktop_json():
     output_data = {
         "periodic-saving-interval": settings["periodic-saving"],
@@ -30,10 +30,10 @@ def create_savedesktop_json():
         }
     }
 
-    file_path = f"{settings['periodic-saving-folder']}/SaveDesktop.json"
+    file_path = f"{settings['periodic-saving-folder']}/{SYNC_METADATA}"
     with open(file_path, "w", encoding="utf-8") as f:
         json.dump(output_data, f, indent=4)
-    print("The SaveDesktop.json file has been created or modified (if it already exists).")
+    print("The SaveDesktopPlus.json file has been created or modified (if it already exists).")
 
 # Set up auto-mounting of the cloud drives after logging in to the system
 def set_up_auto_mount(mount_type):
@@ -107,7 +107,7 @@ def set_up_auto_mount(mount_type):
         elif os.path.exists(f"{cfile_subtitle}/.stfolder"):
             cmd = ""
         else:
-            cmd = f"rclone mount {cfile_subtitle.split('/')[-1]}: {cfile_subtitle}" if not os.path.exists(f"{download_dir}/SaveDesktop/rclone_drive") else f"rclone mount savedesktop: {download_dir}/SaveDesktop/rclone_drive"
+            cmd = f"rclone mount {cfile_subtitle.split('/')[-1]}: {cfile_subtitle}" if not os.path.exists(f"{download_dir}/SaveDesktopPlus/rclone_drive") else f"rclone mount savedesktop-plus: {download_dir}/SaveDesktopPlus/rclone_drive"
 
         synchronization_content = f'#!/usr/bin/bash\n{cmd}\nsleep 60s\n{sync_cmd}\n{periodic_saving_cmd}'
         if flatpak:
@@ -116,9 +116,9 @@ def set_up_auto_mount(mount_type):
             f.write(synchronization_content)
 
         os.makedirs(f'{home}/.config/autostart', exist_ok=True)
-        open(f"{home}/.config/autostart/io.github.vikdevelop.SaveDesktop.sync.desktop", "w").write(f"[Desktop Entry]\nName=SaveDesktop (Synchronization)\nType=Application\nExec=sh {DATA}/savedesktop-synchronization.sh")
+        open(f"{home}/.config/autostart/{APP_ID}.sync.desktop", "w").write(f"[Desktop Entry]\nName={APP_NAME} (Synchronization)\nType=Application\nExec=sh {DATA}/savedesktop-synchronization.sh")
 
-        [os.remove(path) for path in [f"{home}/.config/autostart/io.github.vikdevelop.SaveDesktop.Backup.desktop", f"{home}/.config/autostart/io.github.vikdevelop.SaveDesktop.Flatpak.desktop"] if os.path.exists(path)]
+        [os.remove(path) for path in [f"{home}/.config/autostart/{APP_ID}.Backup.desktop", f"{home}/.config/autostart/{APP_ID}.Flatpak.desktop"] if os.path.exists(path)]
 
         print("Automatic connection to the cloud folder has been set up.")
     else:

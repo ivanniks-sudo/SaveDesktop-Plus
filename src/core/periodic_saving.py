@@ -56,14 +56,14 @@ class PeriodicBackups:
 
     def backup(self):
         self._send_notification_at_start_up()
-        if self.pbfolder == '{}/SaveDesktop/archives'.format(download_dir) or self.pbfolder == f'{download_dir}/SaveDesktop/archives':
+        if self.pbfolder == '{}/SaveDesktopPlus/archives'.format(download_dir) or self.pbfolder == f'{download_dir}/SaveDesktopPlus/archives':
             try:
-                if not os.path.exists(f"{download_dir}/SaveDesktop/archives"):
-                    os.makedirs(f"{download_dir}/SaveDesktop/archives")
+                if not os.path.exists(f"{download_dir}/SaveDesktopPlus/archives"):
+                    os.makedirs(f"{download_dir}/SaveDesktopPlus/archives")
             except FileNotFoundError:
                 subprocess.run(["mkdir", f"{home}/Downloads"])
                 subprocess.run([f"xdg-user-dirs-update", "--set", "DOWNLOAD", f"{home}/Downloads"])
-                os.makedirs(f"{download_dir}/SaveDesktop/archives")
+                os.makedirs(f"{download_dir}/SaveDesktopPlus/archives")
 
         if " " in settings["filename-format"]:
             self.filename = settings["filename-format"].replace(" ", "_")
@@ -77,7 +77,7 @@ class PeriodicBackups:
     def _send_notification_at_start_up(self):
         try:
             self.status_desc = _("<big><b>Saving configuration …</b></big>\nThe configuration of your desktop environment will be saved in:\n <i>{}/{}.sd.tar.gz</i>\n").split('</b>')[0].split('<b>')[-1]
-            subprocess.run(["notify-send", f'Save Desktop ({_("Periodic saving")})', self.status_desc])
+            subprocess.run(["notify-send", f'{APP_NAME} ({_("Periodic saving")})', self.status_desc])
         except NameError: # handle an error: '_' is not defined
             pass
 
@@ -104,6 +104,6 @@ class PeriodicBackups:
 
         # Send a notification about finished periodic saving
         try:
-            subprocess.run(["notify-send", f'Save Desktop ({_("Periodic saving")})', _("Configuration has been saved!")])
+            subprocess.run(["notify-send", f'{APP_NAME} ({_("Periodic saving")})', _("Configuration has been saved!")])
         except NameError: # handle an error: '_' is not defined
             pass

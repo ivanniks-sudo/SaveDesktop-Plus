@@ -1,9 +1,8 @@
 <div align="center">
-  <img src="/data/icons/hicolor/scalable/apps/io.github.vikdevelop.SaveDesktop.svg" width="128"/>
-  <h1>Save Desktop</h1>
+  <img src="/data/icons/hicolor/scalable/apps/io.github.ivanniks_sudo.SaveDesktopPlus.svg" width="128"/>
+  <h1>SaveDesktop Plus</h1>
   <p><i>Save your desktop configuration</i></p>
 
-  <a href='https://flathub.org/apps/io.github.vikdevelop.SaveDesktop'><img width='180' alt="Download on Flathub" src='https://flathub.org/api/badge?svg&locale=en&light'/></a>
   
   ![License: GPL-3.0](https://img.shields.io/badge/License-GPLv3-blue.svg)
   ![Translations](https://hosted.weblate.org/widget/vikdevelop/savedesktop/svg-badge.svg)
@@ -11,7 +10,12 @@
 
 ## 🚀 About
 
-**Save Desktop** is a cross-desktop tool to **back up, restore and sync your entire Linux desktop setup**.
+**SaveDesktop Plus** is a preview fork of [SaveDesktop 4.1 by vikdevelop](https://github.com/vikdevelop/SaveDesktop/tree/4.1).
+The 2026-11-26 changes establish independent Flatpak packaging and settings.
+The [GPL-3.0-or-later license](LICENSE) applies to the application.
+The original icon artwork by Brage Fuglseth is reused under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). The [upstream SVG source](data/icons/io.github.vikdevelop.SaveDesktop.Source.svg) and icon artwork are unchanged; only the installed icon filenames differ.
+
+SaveDesktop Plus is a cross-desktop tool to **back up, restore and sync your entire Linux desktop setup**.
 It can save your themes, icons, fonts, settings, wallpapers (even dynamic ones), Flatpak apps and user data – and bring them back in just a few clicks.
 
 ## 📸 Screenshots
@@ -139,7 +143,6 @@ It can save your themes, icons, fonts, settings, wallpapers (even dynamic ones),
 
 **Flathub** _(recommended)_: The latest stable releases
 
-<a href='https://flathub.org/apps/io.github.vikdevelop.SaveDesktop'><img width='180' alt='Download on Flathub' src='https://flathub.org/api/badge?svg&locale=en&light'/></a>
 
 > [!WARNING]
 > **Snap Store**: Frozen at version `3.6.2-hotfix`, no updates will be provided. Active development continues on **Flathub** (see above).

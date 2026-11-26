@@ -91,7 +91,7 @@ def create_flatpak_list():
     print("[OK] Saving Flatpak app list")
 
 def create_flatpak_autostart():
-    os.system(f"cp /app/share/savedesktop/savedesktop/core/flatpaks_installer.py {CACHE}/workspace")
+    os.system(f"cp {app_prefix}/savedesktop/core/flatpaks_installer.py {CACHE}/workspace")
 
     # Create a JSON file with the user's preferences for Flatpak apps
     with open(f"{CACHE}/workspace/flatpak-prefs.json", "w") as fl:
@@ -100,12 +100,12 @@ def create_flatpak_autostart():
     # Create an autostart file for post-login Flatpak installation
     os.makedirs(f"{home}/.config/autostart", exist_ok=True)
     if not os.path.exists(f"{DATA}/savedesktop-synchronization.sh"):
-        with open(f"{home}/.config/autostart/io.github.vikdevelop.SaveDesktop.Flatpak.desktop", "w") as f:
+        with open(f"{home}/.config/autostart/{APP_ID}.Flatpak.desktop", "w") as f:
             f.write(
                 "[Desktop Entry]\n"
-                "Name=SaveDesktop (Flatpak Apps installer)\n"
+                f"Name={APP_NAME} (Flatpak Apps installer)\n"
                 "Type=Application\n"
-                f"Exec=sh -c \"flatpak run io.github.vikdevelop.SaveDesktop --show-flatpaks-installer & python3 -u {CACHE}/workspace/flatpaks_installer.py > {CACHE}/workspace/log.pipe 2>&1\""
+                f"Exec=sh -c \"flatpak run {APP_ID} --show-flatpaks-installer & python3 -u {CACHE}/workspace/flatpaks_installer.py > {CACHE}/workspace/log.pipe 2>&1\""
             )
 
     print("[OK] Created Flatpak autostart")
@@ -408,7 +408,7 @@ class Import:
         self.import_dconf()
 
     def _create_rec_dir(self):
-        base = Path(download_dir) / f"SaveDesktop/Recovered_Custom_Dirs_{date.today()}"
+        base = Path(download_dir) / f"SaveDesktopPlus/Recovered_Custom_Dirs_{date.today()}"
         self.rec_dir = base
         i = 1
         while self.rec_dir.exists():

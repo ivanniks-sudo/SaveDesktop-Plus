@@ -223,14 +223,14 @@ class MoreOptionsDialog(Adw.AlertDialog):
     def __create_pb_desktop(self):
         os.makedirs(f'{home}/.config/autostart', exist_ok=True)
         if not os.path.exists(f"{DATA}/savedesktop-synchronization.sh"):
-            with open(f'{home}/.config/autostart/io.github.vikdevelop.SaveDesktop.Backup.desktop', 'w') as cb:
-                cb.write(f'[Desktop Entry]\nName=SaveDesktop (Periodic backups)\nType=Application\nExec={periodic_saving_cmd}')
+            with open(f'{home}/.config/autostart/{APP_ID}.Backup.desktop', 'w') as cb:
+                cb.write(f'[Desktop Entry]\nName={APP_NAME} (Periodic backups)\nType=Application\nExec={periodic_saving_cmd}')
 
     # write the periodic saving info (folder or filename) to these files if they exist
     def __update_synchronization_scripts(self):
         if os.path.exists(f"{DATA}/savedesktop-synchronization.sh"):
             set_up_auto_mount(mount_type="periodic-saving")
-        if os.path.exists(f'{settings["periodic-saving-folder"]}/SaveDesktop.json'):
+        if os.path.exists(f'{settings["periodic-saving-folder"]}/{SYNC_METADATA}'):
             savedesktop_json = Thread(target=create_savedesktop_json)
             savedesktop_json.start()
 

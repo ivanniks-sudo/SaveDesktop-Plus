@@ -296,7 +296,7 @@ class itemsDialog(Adw.AlertDialog):
             settings["enable-custom-dirs"] = self.custom_switch.get_active()
             if hasattr(self, "switch_gtk"):
                 settings["save-bookmarks"] = self.switch_gtk.get_active()
-            if settings["periodic-saving"] != "Never" and os.path.exists(f"{settings['periodic-saving-folder']}/SaveDesktop.json"):
+            if settings["periodic-saving"] != "Never" and os.path.exists(f"{settings['periodic-saving-folder']}/{SYNC_METADATA}"):
                 create_savedesktop_json()
             if flatpak:
                 settings["save-installed-flatpaks"] = self.switch_05.get_active()

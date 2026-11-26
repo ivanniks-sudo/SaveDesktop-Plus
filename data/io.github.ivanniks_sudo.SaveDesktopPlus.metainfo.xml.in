@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop">
     
-    <id>io.github.vikdevelop.SaveDesktop</id>
-    <launchable type="desktop-id">io.github.vikdevelop.SaveDesktop.desktop</launchable>
-    <name>Save Desktop</name>
+    <id>io.github.ivanniks_sudo.SaveDesktopPlus</id>
+    <launchable type="desktop-id">io.github.ivanniks_sudo.SaveDesktopPlus.desktop</launchable>
+    <name>SaveDesktop Plus</name>
     <metadata_license>CC0-1.0</metadata_license>
     <project_license>GPL-3.0-or-later</project_license>
-    <developer id="io.github.vikdevelop">
-      <name>vikdevelop</name>
+    <developer id="io.github.ivanniks_sudo">
+      <name>ivanniks-sudo</name>
     </developer>
 
     <categories>
@@ -31,15 +31,16 @@
         <color type="primary" scheme_preference="dark">#061530</color>
     </branding>
     
-    <url type="homepage">https://vikdevelop.github.io/SaveDesktop</url>
-    <url type="vcs-browser">https://github.com/vikdevelop/SaveDesktop</url>
-    <url type="bugtracker">https://github.com/vikdevelop/SaveDesktop/issues</url>
+    <url type="homepage">https://github.com/ivanniks-sudo/SaveDesktop-Plus</url>
+    <url type="vcs-browser">https://github.com/ivanniks-sudo/SaveDesktop-Plus</url>
+    <url type="bugtracker">https://github.com/ivanniks-sudo/SaveDesktop-Plus/issues</url>
     <url type="translate">https://hosted.weblate.org/projects/vikdevelop/savedesktop/</url>
     <url type="contribute">https://github.com/vikdevelop/SaveDesktop/blob/main/CONTRIBUTING.md</url>
 
     <summary translatable="yes">Save your desktop configuration</summary>
     
     <description>
+        <p translatable="no">SaveDesktop Plus is a preview fork of SaveDesktop 4.1, originally developed by vikdevelop.</p>
         <p translatable="yes">Save Desktop helps you back up, restore, and synchronize your entire desktop environment with ease. It saves and imports your themes, icons, fonts, wallpapers, extensions, desktop folder, Flatpak apps and their data, as well as other desktop settings — all in one archive. Choose what to include and keep your setup consistent across devices with automatic periodic saves and synchronization.</p>
     </description>
 
@@ -53,19 +54,24 @@
     <screenshots>
         <screenshot type="default">
             <caption translatable="yes">Save</caption>
-            <image>https://raw.githubusercontent.com/vikdevelop/SaveDesktop/main/data/screenshots/save_page.png</image>
+            <image>https://raw.githubusercontent.com/vikdevelop/SaveDesktop/4.1/data/screenshots/save_page.png</image>
         </screenshot>
         <screenshot>
             <caption translatable="yes">Import</caption>
-            <image>https://raw.githubusercontent.com/vikdevelop/SaveDesktop/main/data/screenshots/import_page.png</image>
+            <image>https://raw.githubusercontent.com/vikdevelop/SaveDesktop/4.1/data/screenshots/import_page.png</image>
         </screenshot>
         <screenshot>
             <caption translatable="yes">Sync</caption>
-            <image>https://raw.githubusercontent.com/vikdevelop/SaveDesktop/main/data/screenshots/sync_page.png</image>
+            <image>https://raw.githubusercontent.com/vikdevelop/SaveDesktop/4.1/data/screenshots/sync_page.png</image>
         </screenshot>
     </screenshots>
           
     <releases>
+       <release type="development" version="4.1.0~preview.1" date="2026-11-26">
+          <description>
+            <p>Initial preview with separate application identity, based on SaveDesktop 4.1.</p>
+          </description>
+       </release>
        <release version="4.1" date="2026-07-05">
           <url>https://github.com/vikdevelop/SaveDesktop/releases/tag/4.1</url>
           <description>

@@ -15,7 +15,7 @@ from savedesktop.gui.synchronization_dialogs import InitSetupDialog, SetDialog, 
 class MainWindow(Adw.ApplicationWindow):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.set_title("Save Desktop")
+        self.set_title(APP_NAME)
         self.app_wiki = "https://vikdevelop.github.io/SaveDesktop/wiki"
 
         # header bar and toolbarview
@@ -81,7 +81,7 @@ class MainWindow(Adw.ApplicationWindow):
         # menu switcher
         self.switcher_title = Adw.ViewSwitcherTitle.new()
         self.switcher_title.set_stack(self.stack)
-        self.switcher_title.set_title("Save Desktop")
+        self.switcher_title.set_title(APP_NAME)
         self.headerbar.set_title_widget(self.switcher_title)
 
         # menu bar
@@ -704,7 +704,7 @@ class MainWindow(Adw.ApplicationWindow):
 
     # send notification about saved configuration if application window is inactive only
     def _send_notification(self):
-        self.notification_save = Gio.Notification.new("Save Desktop")
+        self.notification_save = Gio.Notification.new(APP_NAME)
         self.notification_save.set_body(self.done_title)
         app = self.get_application()
         active_window = app.get_active_window()
@@ -742,7 +742,7 @@ class MainWindow(Adw.ApplicationWindow):
     def _set_default_widgets_state(self):
         self.scrolled.set_child(self.headapp)
         self.headerbar.set_title_widget(self.switcher_title)
-        self.set_title("Save Desktop")
+        self.set_title(APP_NAME)
         self.apply_handler = self.break_point.connect("apply", self.__on_break_point_apply)
         if self.get_default_size()[0] < 400:
             self.switcher_bar.set_reveal(True)

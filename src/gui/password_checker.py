@@ -10,11 +10,11 @@ class PasswordWindow(Gtk.ApplicationWindow):
         super().__init__(*args, **kwargs)
         
         sync = _("Sync")
-        self.set_title(f"{sync} | Save Desktop")
+        self.set_title(f"{sync} | {APP_NAME}")
         
         # Header bar
         self.headerbar = Gtk.HeaderBar.new()
-        self.headerbar.pack_start(Gtk.Image.new_from_icon_name("io.github.vikdevelop.SaveDesktop-symbolic"))
+        self.headerbar.pack_start(Gtk.Image.new_from_icon_name(f"{APP_ID}-symbolic"))
         self.set_titlebar(self.headerbar)
         
         self.set_default_size(400, 200)
@@ -84,7 +84,7 @@ class PasswordWindow(Gtk.ApplicationWindow):
 class PasswordCheckerApp(Adw.Application):
     def __init__(self, **kwargs):
         super().__init__(**kwargs, flags=Gio.ApplicationFlags.FLAGS_NONE,
-                         application_id="io.github.vikdevelop.SaveDesktop")
+                         application_id=f"{APP_ID}.PasswordChecker")
         self.connect('activate', self.on_activate)
     
     # Show the app window

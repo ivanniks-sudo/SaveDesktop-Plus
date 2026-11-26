@@ -6,7 +6,7 @@ from savedesktop.gui.window import MainWindow
 from savedesktop.gui.items_dialog import itemsDialog
 from savedesktop.globals import *
 
-@Gtk.Template(resource_path="/io/github/vikdevelop/SaveDesktop/gui/templates/shortcuts_window.ui")
+@Gtk.Template(resource_path="/" + APP_ID.replace(".", "/") + "/gui/templates/shortcuts_window.ui")
 class ShortcutsWindow(Gtk.ShortcutsWindow):
     __gtype_name__ = 'SaveDesktopShortcutsWindow'
 
@@ -16,7 +16,7 @@ class ShortcutsWindow(Gtk.ShortcutsWindow):
 class SaveDesktopApp(Adw.Application):
     def __init__(self, **kwargs):
         super().__init__(**kwargs, flags=Gio.ApplicationFlags.FLAGS_NONE,
-                         application_id="io.github.vikdevelop.SaveDesktop")
+                         application_id=APP_ID)
         self.create_action('save-config', self.call_saving_config, ["<primary>s"])
         self.create_action('import-config', self.call_importing_config, ["<primary>o"])
         self.create_action('ms-dialog', self.call_ms_dialog, ["<primary><shift>m"])
@@ -96,18 +96,18 @@ class SaveDesktopApp(Adw.Application):
     def on_about_action(self, action, param):
         app_version = os.environ.get("SAVEDESKTOP_VERSION")
         dialog = Adw.AboutDialog(
-            application_name="Save Desktop",
-            developer_name="vikdevelop",
-            comments=_("Save your desktop configuration"),
+            application_name=APP_NAME,
+            developer_name="ivanniks-sudo",
+            comments=_("Save your desktop configuration") + "\nFork of SaveDesktop 4.1 by vikdevelop.",
             license_type=Gtk.License.GPL_3_0,
-            website="https://vikdevelop.github.io/SaveDesktop",
-            issue_url="https://github.com/vikdevelop/SaveDesktop/issues",
+            website="https://github.com/ivanniks-sudo/SaveDesktop-Plus",
+            issue_url="https://github.com/ivanniks-sudo/SaveDesktop-Plus/issues",
             copyright="© 2023-2026 vikdevelop",
             developers=["vikdevelop https://github.com/vikdevelop"],
-            artists=["Brage Fuglseth"],
+            artists=["Brage Fuglseth (upstream artwork)"],
             version=app_version,
-            application_icon="io.github.vikdevelop.SaveDesktop",
-            release_notes=f"<p>https://github.com/vikdevelop/SaveDesktop/releases/tag/{app_version}</p>",
+            application_icon=APP_ID,
+            release_notes="<p>Preliminary build based on SaveDesktop 4.1.</p>",
         )
 
         if _("Translator credits") != "Translator credits":

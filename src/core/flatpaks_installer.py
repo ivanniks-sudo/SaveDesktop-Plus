@@ -2,7 +2,7 @@
 import os, subprocess, shutil, json, time
 from pathlib import Path
 
-CACHE_FLATPAK = f"{Path.home()}/.var/app/io.github.vikdevelop.SaveDesktop/cache/tmp/workspace"
+CACHE_FLATPAK = f"{Path.home()}/.var/app/io.github.ivanniks_sudo.SaveDesktopPlus/cache/tmp/workspace"
 
 # Check Desktop Environment
 desktop_env = os.getenv("XDG_CURRENT_DESKTOP")
@@ -130,6 +130,6 @@ else:
     print("There's no need to install any new apps, since they're all available on your system.", flush=True)
 
 # Remove the autostart file after finishing the operations
-autostart_file = f"{Path.home()}/.config/autostart/io.github.vikdevelop.SaveDesktop.Flatpak.desktop"
+autostart_file = f"{Path.home()}/.config/autostart/io.github.ivanniks_sudo.SaveDesktopPlus.Flatpak.desktop"
 if os.path.exists(autostart_file):
     os.remove(autostart_file)

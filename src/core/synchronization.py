@@ -58,9 +58,9 @@ class Syncing:
     def download_config(self):
         self._send_notification_at_startup()
 
-        # Check, if the SaveDesktop.json file exists, or not
+        # Check, if the SaveDesktopPlus.json file exists, or not
         try:
-            open(f"{settings['file-for-syncing']}/SaveDesktop.json").close()
+            open(f"{settings['file-for-syncing']}/{SYNC_METADATA}").close()
         except Exception as e:
             subprocess.run(["notify-send", _("An error occured"), str(e)])
 
@@ -82,11 +82,11 @@ class Syncing:
             .replace("</i>", "")
             .split("…", 1)[-1].strip()
         ).format(f'{settings["file-for-syncing"]}/{settings["filename-format"]}.sd.zip')
-        subprocess.run(["notify-send", "Save Desktop Synchronization", subtitle])
+        subprocess.run(["notify-send", f"{APP_NAME} Synchronization", subtitle])
         
-    # Get data from the SaveDesktop.json file such as filename format, periodic saving interval and folder (for bidirectional synchronization)
+    # Get data from the SaveDesktopPlus.json file such as filename format, periodic saving interval and folder (for bidirectional synchronization)
     def get_pb_info(self):
-        with open(os.path.join(settings['file-for-syncing'], "SaveDesktop.json")) as data:
+        with open(os.path.join(settings['file-for-syncing'], SYNC_METADATA)) as data:
             info = json.load(data)
         self.file = info["filename"].replace(" ", "_") if " " in info["filename"] else info["filename"]
         if settings["bidirectional-sync"]:
@@ -182,4 +182,4 @@ class Syncing:
             os.remove(f"{CACHE}/sync")
 
         # Send a notification about finished synchronization
-        subprocess.run(["notify-send", f"Save Desktop Synchronization ({self.file})", f"{_('The configuration has been applied!')} {_('Changes will only take effect after the next login')}.", "-i", "io.github.vikdevelop.SaveDesktop-symbolic"])
+        subprocess.run(["notify-send", f"{APP_NAME} Synchronization ({self.file})", f"{_('The configuration has been applied!')} {_('Changes will only take effect after the next login')}.", "-i", f"{APP_ID}-symbolic"])

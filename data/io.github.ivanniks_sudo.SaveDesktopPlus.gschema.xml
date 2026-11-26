@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <schemalist>
-	<schema id="io.github.vikdevelop.SaveDesktop" path="/io/github/vikdevelop/SaveDesktop/">
+	<schema id="io.github.ivanniks_sudo.SaveDesktopPlus" path="/io/github/ivanniks_sudo/SaveDesktopPlus/">
 		<key name="window-size" type="(ii)">
 			<default>(500, 500)</default>
 			<summary>Window size</summary>
@@ -72,7 +72,7 @@
 			<summary>Periodic saving</summary>
 		</key>
 		<key name="periodic-saving-folder" type="s">
-		  	<default>'{}/SaveDesktop/archives'</default>
+			<default>'{}/SaveDesktopPlus/archives'</default>
 		  	<summary>Folder for periodic backups</summary>
 		</key>
 		<key name="filename" type="s">

@@ -8,7 +8,7 @@ class FlatpaksWindow(Adw.ApplicationWindow):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        self.win_title = f'{_("Installing your Flatpak apps...")} | Save Desktop'
+        self.win_title = f'{_("Installing your Flatpak apps...")} | {APP_NAME}'
         self.set_title(self.win_title)
 
         # header bar and toolbarview
@@ -18,7 +18,7 @@ class FlatpaksWindow(Adw.ApplicationWindow):
         self.set_content(self.toolbarview)
         self.connect("close-request", self.on_manual_close)
 
-        self.headerbar.pack_start(Gtk.Image.new_from_icon_name("io.github.vikdevelop.SaveDesktop-symbolic"))
+        self.headerbar.pack_start(Gtk.Image.new_from_icon_name(f"{APP_ID}-symbolic"))
 
         self.set_size_request(360, 600)
 
@@ -247,7 +247,7 @@ class FlatpaksWindow(Adw.ApplicationWindow):
 class FlatpaksInstallerApp(Adw.Application):
     def __init__(self, **kwargs):
         super().__init__(**kwargs, flags=Gio.ApplicationFlags.FLAGS_NONE,
-                         application_id="io.github.vikdevelop.SaveDesktop")
+                         application_id=f"{APP_ID}.FlatpakInstaller")
         self.connect('activate', self.on_activate)
 
     # Show the app window

@@ -91,9 +91,9 @@ class InitSetupDialog(Adw.AlertDialog):
             self.present(self.parent)
         elif response == 'ok-rclone': # set the periodic saving folder in the Rclone case
             if self.get_button_type == 'set-button':
-                settings["periodic-saving-folder"] = f"{download_dir}/SaveDesktop/rclone_drive"
+                settings["periodic-saving-folder"] = f"{download_dir}/SaveDesktopPlus/rclone_drive"
             else:
-                settings["file-for-syncing"] = f"{download_dir}/SaveDesktop/rclone_drive"
+                settings["file-for-syncing"] = f"{download_dir}/SaveDesktopPlus/rclone_drive"
             self.almost_done()
             self.present(self.parent)
         elif response == 'open-setdialog': # open the "Set up the sync file" dialog after clicking on the Next button in "Almost done!" page
@@ -123,7 +123,7 @@ class InitSetupDialog(Adw.AlertDialog):
         self.set_body("")
         self.__get_selected_cloud_service()
 
-        self.rclone_command = f"command -v rclone &amp;> /dev/null &amp;&amp; (rclone config create savedesktop {self.cloud_service} &amp;&amp; rclone mount savedesktop: {download_dir}/SaveDesktop/rclone_drive) || echo 'Rclone is not installed. Please install it from this website first: https://rclone.org/install/.'"
+        self.rclone_command = f"command -v rclone &amp;> /dev/null &amp;&amp; (rclone config create savedesktop-plus {self.cloud_service} &amp;&amp; rclone mount savedesktop-plus: {download_dir}/SaveDesktopPlus/rclone_drive) || echo 'Rclone is not installed. Please install it from this website first: https://rclone.org/install/.'"
 
         self.cmdRow.set_title(_("Now, copy the command to set up Rclone using the side button and open the terminal app using the Ctrl+Alt+T keyboard shortcut or finding it in the apps' menu."))
         self.cmdRow.set_subtitle(self.rclone_command)
@@ -150,7 +150,7 @@ class InitSetupDialog(Adw.AlertDialog):
     # copy the command for setting up the Rclone using Gdk.Clipboard()
     def __copy_rclone_command(self, w):
         # Create the requested folder before copying the command for setting up Rclone to the clipboard
-        os.makedirs(f"{download_dir}/SaveDesktop/rclone_drive", exist_ok=True)
+        os.makedirs(f"{download_dir}/SaveDesktopPlus/rclone_drive", exist_ok=True)
 
         # Replace "&amp;" characters with "&" due to syntax errors in Bash/Zsh
         self.rclone_command = self.rclone_command.replace("&amp;", "&")
@@ -287,7 +287,7 @@ class SetDialog(Adw.AlertDialog):
             self.lmButton.connect("clicked", self._open_sync_link)
             self.file_row.add_suffix(self.lmButton)
             self.set_response_enabled('ok', False)
-            [os.remove(path) for path in [f"{home}/.config/autostart/io.github.vikdevelop.SaveDesktop.sync.desktop", f"{DATA}/savedesktop-synchronization.sh"] if os.path.exists(path)] # remove these files if the periodic saving folder is not a cloud drive folder
+            [os.remove(path) for path in [f"{home}/.config/autostart/{APP_ID}.sync.desktop", f"{DATA}/savedesktop-synchronization.sh"] if os.path.exists(path)] # remove these files if the periodic saving folder is not a cloud drive folder
         self.set_body("") # set the body as empty after loading the periodic saving information
 
     # make the periodic saving file if it does not exist
@@ -300,14 +300,14 @@ class SetDialog(Adw.AlertDialog):
             self.status_desc = _("<big><b>Saving configuration …</b></big>\nThe configuration of your desktop environment will be saved in:\n <i>{}/{}.sd.tar.gz</i>\n").split('</b>')[0].split('<b>')[-1]
             self.file_row.set_subtitle(self.status_desc)
             self.file_row.set_use_markup(False)
-            subprocess.run(['notify-send', 'Save Desktop', self.status_desc])
+            subprocess.run(['notify-send', APP_NAME, self.status_desc])
             PeriodicBackups(now=True)
         except Exception as e:
             subprocess.run(['notify-send', _("An error occurred"), f'{e}'])
             self.file_row.set_subtitle(f'{e}')
         else:
             self.file_row.set_subtitle(f'{settings["periodic-saving-folder"]}/{settings["filename-format"]}.sd.zip')
-            os.system(f"notify-send 'SaveDesktop' '{_('Configuration has been saved!')}'")
+            os.system(f"notify-send '{APP_NAME}' '{_('Configuration has been saved!')}'")
             self.set_response_enabled('ok', True)
 
     # Action after closing dialog for setting synchronization file
@@ -318,7 +318,7 @@ class SetDialog(Adw.AlertDialog):
         elif response == 'cancel':
             os.remove(f"{CACHE}/expand_pb_row")
 
-    # save the SaveDesktop.json file to the periodic saving folder and set up the auto-mounting the cloud drive
+    # save the SaveDesktopPlus.json file to the periodic saving folder and set up the auto-mounting the cloud drive
     def _save_file(self):
         try:
             create_savedesktop_json()
@@ -451,7 +451,7 @@ class CloudDialog(Adw.AlertDialog):
         self.set_response_enabled('ok', True)
         settings["file-for-syncing"] = self.cfileRow.get_subtitle()
         if not settings["periodic-saving-folder"]:
-            [os.remove(path) for path in [f"{home}/.config/autostart/io.github.vikdevelop.SaveDesktop.sync.desktop", f"{DATA}/savedesktop-synchronization.sh"] if os.path.exists(path)]
+            [os.remove(path) for path in [f"{home}/.config/autostart/{APP_ID}.sync.desktop", f"{DATA}/savedesktop-synchronization.sh"] if os.path.exists(path)]
 
     # enable or disable the response of this dialog in depending on the selected periodic synchronization interval
     def _on_psync_changed(self, psyncRow, GParamObject):

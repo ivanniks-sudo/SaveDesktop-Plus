@@ -5,12 +5,17 @@ gi.require_version('Adw', '1')
 from gi.repository import Gtk, Adw, Gio, GLib
 from pathlib import Path
 
+APP_ID = "io.github.ivanniks_sudo.SaveDesktopPlus"
+APP_NAME = "SaveDesktop Plus"
+COMMAND = "savedesktop-plus"
+SYNC_METADATA = "SaveDesktopPlus.json"
+
 # Environment detection
 def get_app_environment():
     if os.path.exists("/.flatpak-info"):
         return {
             'type': 'flatpak',
-            'run_cmd': 'flatpak run io.github.vikdevelop.SaveDesktop',
+            'run_cmd': f'flatpak run {APP_ID}',
             'cache': f'{GLib.get_user_cache_dir()}/tmp',
             'data': f'{GLib.get_user_data_dir()}'
         }
@@ -18,9 +23,9 @@ def get_app_environment():
     else:
         return {
             'type': 'native',
-            'run_cmd': 'savedesktop',
-            'cache': os.path.join(f'{GLib.get_user_cache_dir()}', 'io.github.vikdevelop.SaveDesktop'),
-            'data': os.path.join(f'{GLib.get_user_data_dir()}', 'io.github.vikdevelop.SaveDesktop')
+            'run_cmd': COMMAND,
+            'cache': os.path.join(f'{GLib.get_user_cache_dir()}', APP_ID),
+            'data': os.path.join(f'{GLib.get_user_data_dir()}', APP_ID)
         }
 
 env = get_app_environment()
@@ -30,8 +35,8 @@ home = Path.home()
 # System paths
 download_dir = GLib.get_user_special_dir(GLib.UserDirectory.DIRECTORY_DOWNLOAD)
 settings = Gio.Settings.new_with_path(
-    "io.github.vikdevelop.SaveDesktop", 
-    "/io/github/vikdevelop/SaveDesktop/"
+    APP_ID,
+    "/" + APP_ID.replace(".", "/") + "/"
 )
 
 # Cache and data directories
@@ -94,5 +99,5 @@ environment = ENVIRONMENTS.get(environment_key, None)
 # Export
 __all__ = [
     'home', 'download_dir', 'flatpak', 'language', 'settings', 'environment_key', 'environment',
-    'ENVIRONMENTS', 'DATA', 'CACHE', 'app_prefix', 'periodic_saving_cmd', 'sync_cmd'
+    'APP_ID', 'APP_NAME', 'SYNC_METADATA', 'ENVIRONMENTS', 'DATA', 'CACHE', 'app_prefix', 'periodic_saving_cmd', 'sync_cmd'
 ]

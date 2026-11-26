@@ -1,4 +1,4 @@
-application_id = 'io.github.vikdevelop.SaveDesktop'
+application_id = 'io.github.ivanniks_sudo.SaveDesktopPlus'
 
 # Scalable app icons
 scalable_apps_dir = join_paths('hicolor', 'scalable', 'apps')
