@@ -1,4 +1,5 @@
 import os, sys, shutil, subprocess, argparse, re, json, signal, tempfile
+from pathlib import Path
 from savedesktop.globals import *
 from savedesktop.core.password_store import PasswordStore
 from savedesktop.core.de_config import Save, Import
