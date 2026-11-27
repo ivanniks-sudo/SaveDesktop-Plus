@@ -16,22 +16,26 @@ SHARED_SETTINGS = {
 }
 
 
-def filter_desktop_settings(dump, enabled):
+def filter_desktop_settings(dump, enabled, *, desktop_only=False):
     section = ""
     lines = []
     for line in dump.splitlines(keepends=True):
         text = line.strip()
         if text.startswith("[") and text.endswith("]"):
             section = text[1:-1]
-        if section == "org/nemo/desktop" or section.startswith("org/nemo/desktop/"):
-            if not enabled:
-                continue
+        desktop_section = section == "org/nemo/desktop" or section.startswith("org/nemo/desktop/")
+        if desktop_section and not enabled:
+            continue
         key = text.partition("=")[0].strip()
         if section == "org/nemo/preferences" and key == "desktop-is-home-dir":
             # Keep the destination user's desktop location.
             continue
-        if not enabled and key in SHARED_SETTINGS.get(section, ()) and "=" in text:
+        shared_key = key in SHARED_SETTINGS.get(section, ()) and "=" in text
+        if not enabled and shared_key:
             continue
+        if desktop_only and not desktop_section:
+            if not enabled or not (shared_key or (text.startswith("[") and section in SHARED_SETTINGS)):
+                continue
         lines.append(line)
     return "".join(lines)
 
@@ -45,7 +49,7 @@ def save_desktop_configuration(nemo_directory):
             data.save_to_file(ARCHIVE_FILE)
 
 
-def queue_desktop_configuration(root, config, app_id, monitors):
+def queue_desktop_configuration(root, config, app_id, monitors, job=None):
     for filename in (ARCHIVE_FILE, f"DE/nemo/{NEMO_FILE}", f"nemo/{NEMO_FILE}"):
         source = root / filename
         if source.is_symlink() or not source.is_file():
@@ -74,7 +78,7 @@ def queue_desktop_configuration(root, config, app_id, monitors):
             desktop_file = staging / autostart.name
             entry.save_to_file(str(desktop_file))
             payload = staging / "nemo-desktop-pending.json"
-            payload.write_text(json.dumps({"metadata": data.to_data()[0], "monitors": monitors}), encoding="utf-8")
+            payload.write_text(json.dumps({"metadata": data.to_data()[0], "monitors": monitors, "job": job}), encoding="utf-8")
             restore_file(Path(nemo_session_restore.__file__), helper)
             with nemo_session_restore.pending_lock(state):
                 restore_file(desktop_file, autostart)

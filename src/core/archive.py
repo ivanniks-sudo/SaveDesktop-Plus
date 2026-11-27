@@ -85,7 +85,10 @@ class Unpack:
                 wallpaper = ""
                 if environment and environment["de_name"] == "Cinnamon":
                     dump, wallpaper = split_wallpaper(dump)
-                    dump = filter_desktop_settings(dump, options.get("desktop_configuration", True))
+                    dump = filter_desktop_settings(dump, options.get("desktop_configuration", True),
+                                                   desktop_only=not options.get("system_settings", True))
+                elif not options.get("system_settings", True):
+                    dump = ""
                 unsafe_portal_value = re.compile(r"/run/(?:flatpak/doc|user/[0-9]+/doc)(?=/|['\"])")
                 retained = [line for line in dump.splitlines(keepends=True)
                             if not ("=" in line and unsafe_portal_value.search(line))]

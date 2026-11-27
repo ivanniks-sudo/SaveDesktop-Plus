@@ -2,6 +2,8 @@
 import json
 import sys
 
+HOST_PROTOCOL = 2
+STEP = "SDPLUS-STEP "
 PREFIX = "SDPLUS-RESTORE "
 LIVE_DESKTOP_SECTIONS = ("org/cinnamon/desktop/background", "org/cinnamon/desktop/screensaver")
 
@@ -18,6 +20,10 @@ def affects_cinnamon_shell(dump):
                            for prefix in LIVE_DESKTOP_SECTIONS):
                     return True
     return False
+
+
+def report_step(stage, state="running"):
+    print(STEP + json.dumps([stage, state]), file=sys.stderr, flush=True)
 
 
 def report_completion(result):

@@ -4,7 +4,7 @@ from savedesktop.globals import *
 from savedesktop.core.custom_dirs import enabled_folders, original_path, save_custom_folders, read_folder_metadata, validate_folder_plan
 from savedesktop.core.backup_input import publish_directory, restore_file, restore_tar, restore_tree
 from savedesktop.core.flatpaks_installer import restore_lock
-from savedesktop.core.restore_completion import affects_cinnamon_shell
+from savedesktop.core.restore_completion import affects_cinnamon_shell, report_step
 from savedesktop.core.wallpaper import save_wallpaper, restore_wallpaper
 from savedesktop.core.desktop_configuration import NEMO_FILE, save_desktop_configuration, queue_desktop_configuration
 from pathlib import Path
@@ -88,15 +88,19 @@ def create_flatpak_list():
     export_flatpaks(f'{home}/.local/share/flatpak/app', 'Flatpak_Apps/installed_user_flatpaks.sh', 'user')
     print("[OK] Saving Flatpak app list")
 
-def create_flatpak_autostart(root):
+def create_flatpak_autostart(root, options=None):
+    options = options or {}
+    install = options.get("flatpak_apps", settings["save-installed-flatpaks"])
+    copy_data = options.get("flatpak_data", settings["save-flatpak-data"])
+    keep = options.get("keep_flatpaks", settings["keep-flatpaks"])
     lists = ("installed_flatpaks.sh", "installed_user_flatpaks.sh")
     data = ("flatpak-apps-data.tgz",)
-    names = (lists if settings["save-installed-flatpaks"] else ()) + (data if settings["save-flatpak-data"] else ())
+    names = (lists if install else ()) + (data if copy_data else ())
     flatpak_section = root / "Flatpak_Apps"
     sources = flatpak_section if flatpak_section.is_dir() and not flatpak_section.is_symlink() else root
     legacy_app = root / "app"
     files = [sources / name for name in names if (sources / name).is_file() and not (sources / name).is_symlink()]
-    copy_legacy = settings["save-flatpak-data"] and legacy_app.is_dir() and not legacy_app.is_symlink()
+    copy_legacy = copy_data and legacy_app.is_dir() and not legacy_app.is_symlink()
     if not files and not copy_legacy:
         return
     workspace = Path(CACHE) / "workspace"
@@ -112,10 +116,11 @@ def create_flatpak_autostart(root):
             restore_tree(legacy_app, staging / "app")
         with (staging / "flatpak-prefs.json").open("w") as prefs:
             json.dump({
-                "keep-flatpaks": settings["keep-flatpaks"],
+                "keep-flatpaks": keep,
                 "disabled-flatpaks": settings["disabled-flatpak-apps-data"],
-                "install-flatpaks": settings["save-installed-flatpaks"],
-                "copy-data": settings["save-flatpak-data"],
+                "install-flatpaks": install and any(path.name in lists for path in files),
+                "copy-data": copy_data and (copy_legacy or any(path.name in data for path in files)),
+                "job": options.get("job"),
             }, prefs)
         entry = GLib.KeyFile()
         section = "Desktop Entry"
@@ -142,8 +147,8 @@ def prepare_session_launcher():
     launcher = home / ".local/share/applications" / f"{APP_ID}.RestoreHost.desktop"
     entry = GLib.KeyFile()
     section = "Desktop Entry"
-    entry.set_string(section, "Name", "SaveDesktop Plus — Apply pending restore")
-    entry.set_locale_string(section, "Name", "ru", "SaveDesktop Plus — Применить восстановление")
+    entry.set_string(section, "Name", "SaveDesktop Plus — Set up restoration")
+    entry.set_locale_string(section, "Name", "ru", "SaveDesktop Plus — Настроить восстановление")
     entry.set_string(section, "Type", "Application")
     entry.set_string(section, "Categories", "Utility;")
     argument = str(helper).replace("%", "%%")
@@ -427,6 +432,7 @@ class Import:
         plan = options.get("folders", {})
         plan = validate_folder_plan(folders, plan, probe_portal=True)
         cinnamon = bool(environment and environment["de_name"] == "Cinnamon")
+        restore_system = options.get("system_settings", True)
         restore_background = options.get("wallpaper", settings["save-backgrounds"])
         restore_contents = options.get("desktop_contents", settings["save-desktop-folder"])
         restore_configuration = options.get("desktop_configuration", True)
@@ -447,8 +453,10 @@ class Import:
                 raise ValueError(f"Custom restore destination overlaps a protected desktop location: {location}")
 
         # General dirs (reverse copy)
+        if restore_system:
+            report_step("settings")
         for name, item in GENERAL_ITEMS.items():
-            enabled = restore_background if name == "backgrounds" else settings[item["key"]]
+            enabled = restore_background if name == "backgrounds" else restore_system and settings[item["key"]]
             if enabled:
                 for src, dst in item["dirs"]:
                     source = general / dst
@@ -459,9 +467,16 @@ class Import:
         for name, item in SPECIAL_ITEMS.items():
             if name in ("flatpaks", "flatpak-data"):
                 continue
-            enabled = restore_contents if name == "desktop" else settings[item["key"]]
+            enabled = restore_contents if name == "desktop" else restore_system and settings[item["key"]]
             if enabled:
-                item["import"](general)
+                if name == "desktop" and (general / "desktop-folder.tgz").is_file():
+                    report_step("desktop_files")
+                    item["import"](general)
+                    report_step("desktop_files", "done")
+                else:
+                    item["import"](general)
+        if plan:
+            report_step("folders")
         for source, destination in plan.items():
             restore_tree(root / source, Path(destination))
             location = host_destinations[source]
@@ -471,8 +486,11 @@ class Import:
                 self.cinnamon_shell = True
             print(f"[OK] Restored custom folder: {destination}")
 
+        if plan:
+            report_step("folders", "done")
+        report_step("settings")
         # DE configuration
-        if environment:
+        if restore_system and environment:
             if environment["de_name"] == "KDE Plasma":
                 print("Importing KDE Plasma configuration...")
                 for src, dst in KDE_DIRS_IMPORT:
@@ -486,22 +504,36 @@ class Import:
                     if cinnamon and dst in ("cinnamon", ".cinnamon") and source.is_dir():
                         self.cinnamon_shell = True
                     restore_optional(source, src, exclude=excluded)
-        else:
+        elif restore_system:
             print(f"[WARN] Unknown DE: {environment_key}")
 
         if wallpaper and restore_background:
+            report_step("wallpaper")
             restored = restore_wallpaper(root, wallpaper, folders, plan, host_destinations, home, DATA)
             if restored:
                 dump += "\n" + restored
-        self.import_dconf(dump)
-        if settings["save-installed-flatpaks"] or settings["save-flatpak-data"]:
-            self.flatpaks_pending = bool(create_flatpak_autostart(root))
+        if dump.strip():
+            if restore_system and not (wallpaper and restore_background):
+                report_step("settings")
+            self.import_dconf(dump)
+        if restore_system:
+            report_step("settings", "done")
+        if restore_background and (wallpaper or any((general / name).is_dir() for name in ("backgrounds", "wallpapers"))):
+            report_step("wallpaper", "done" if not wallpaper or restored else "failed")
+        if options.get("flatpak_apps", settings["save-installed-flatpaks"]) or options.get("flatpak_data", settings["save-flatpak-data"]):
+            self.flatpaks_pending = bool(create_flatpak_autostart(root, options))
+            if not self.flatpaks_pending:
+                for stage in ("flatpak_apps", "flatpak_data"):
+                    if options.get(stage):
+                        report_step(stage, "failed")
         if cinnamon and restore_configuration:
             from gi.repository import Gdk
             display = Gdk.Display.get_default() or Gdk.Display.open(None)
             geometries = [monitor.get_geometry() for monitor in display.get_monitors()] if display else []
             monitors = [(geometry.width, geometry.height) for geometry in geometries]
-            self.nemo_pending = queue_desktop_configuration(root, home / ".config", APP_ID, monitors)
+            self.nemo_pending = queue_desktop_configuration(root, home / ".config", APP_ID, monitors, options.get("job"))
+        if restore_configuration and cinnamon and not self.nemo_pending and options.get("desktop_configuration"):
+            report_step("desktop_layout", "done")
         if self.flatpaks_pending or self.nemo_pending:
             prepare_session_launcher()
 

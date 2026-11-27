@@ -26,8 +26,13 @@ APP = re.compile(r"[a-zA-Z_][\w-]*(?:\.[a-zA-Z_][\w-]*){2,}", re.ASCII)
 
 
 def run(*args, capture=False):
-    result = subprocess.run(("flatpak", *args), text=True, check=True,
-                            stdout=subprocess.PIPE if capture else None)
+    diagnostic = sys.stdout is not sys.__stdout__ and not capture
+    result = subprocess.run(("flatpak", *args), text=True,
+                            stdout=subprocess.PIPE if capture or diagnostic else None,
+                            stderr=subprocess.STDOUT if diagnostic else None)
+    if diagnostic and result.stdout:
+        print(result.stdout, end="")
+    result.check_returncode()
     return result.stdout if capture else None
 
 
@@ -99,7 +104,9 @@ def merge_app_data(sources, destination):
     return True
 
 
-def restore(workspace, home):
+def restore(workspace, home, event=None):
+    if event is None:
+        event = lambda *args: None
     preferences = workspace / "flatpak-prefs.json"
     if preferences.is_symlink():
         raise ValueError("Flatpak restore preferences cannot be a symbolic link")
@@ -129,6 +136,7 @@ def restore(workspace, home):
     for scope, app in sorted(desired & installed):
         print(f"[INFO] {app} is already available in the system.", flush=True)
     for index, (scope, app) in enumerate(sorted(missing), 1):
+        event("flatpak_apps", app)
         print(f"↓ Installing {app} ({index}/{len(missing)})", flush=True)
         try:
             run("remote-add", scope, "--if-not-exists", "flathub", FLATHUB)
@@ -141,8 +149,10 @@ def restore(workspace, home):
         if not prefs["copy-data"] and prefs["keep-flatpaks"]:
             print(f"[PROGRESS] {index}/{len(missing)}", flush=True)
 
+    install_failures = len(failures)
     unavailable = {app for _, app in desired - installed}
     if prefs["copy-data"]:
+        event("flatpak_data", "")
         print("[COPY] Copying the Flatpak's user data to ~/.var/app", flush=True)
         with TemporaryDirectory(prefix="restore-apps-") as temporary:
             staging = Path(temporary)
@@ -163,6 +173,7 @@ def restore(workspace, home):
                 if app in unavailable:
                     deferred.append(app)
                     continue
+                event("flatpak_data", app)
                 try:
                     if app in running_apps() or not merge_app_data(folders, home / ".var/app" / app):
                         deferred.append(app)
@@ -173,20 +184,29 @@ def restore(workspace, home):
                 except (OSError, ValueError, subprocess.CalledProcessError) as error:
                     failures.append(f"{app}: {error}")
 
-    if install and not prefs["keep-flatpaks"] and desired and not failures and not deferred:
-        for scope, app in sorted(installed - desired):
-            if scope not in listed_scopes or app in excluded or any(name == app for _, name in desired):
-                continue
+    if prefs["copy-data"]:
+        event("flatpak_data_result", "partial" if deferred or len(failures) > install_failures else "done")
+    removals = {(scope, app) for scope, app in installed - desired
+                if scope in listed_scopes and app not in excluded and not any(name == app for _, name in desired)}
+    removed_all = not (install and not prefs["keep-flatpaks"] and desired and removals)
+    if not removed_all and not failures and not deferred:
+        removed_all = True
+        for scope, app in sorted(removals):
+            event("flatpak_apps", app)
             try:
                 if app in running_apps():
+                    removed_all = False
                     deferred.append(app)
                     continue
                 print(f"[REMOVE] {scope} {app}", flush=True)
                 # Flatpak data are shared between installations. Keep the files for manual cleanup.
                 run("uninstall", scope, "-y", app)
             except (OSError, subprocess.CalledProcessError) as error:
+                removed_all = False
                 failures.append(f"{app} ({scope}): {error}")
 
+    if install:
+        event("flatpak_apps_result", "partial" if install_failures or not removed_all else "done")
     for error in failures:
         print(f"[ERROR] {error}", flush=True)
     for app in deferred:

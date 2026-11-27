@@ -69,11 +69,11 @@ def apply_pending(pending, destination):
             _apply_pending(pending, destination)
 
 
-def _apply_pending(pending, destination, *, consume=True):
+def _apply_pending(pending, destination, *, consume=True, snapshot=None):
     if pending.is_symlink() or any(path.is_symlink() for path in (destination, *destination.parents)):
         raise ValueError("Symbolic link in Nemo desktop metadata restore")
 
-    request = json.loads(pending.read_text(encoding="utf-8"))
+    request = json.loads(pending.read_text(encoding="utf-8") if snapshot is None else snapshot)
     source = GLib.KeyFile()
     contents = request["metadata"]
     source.load_from_data(contents, len(contents.encode("utf-8")), GLib.KeyFileFlags.NONE)
