@@ -962,3 +962,153 @@ msgstr "Восстановление завершено с отложенным�
 
 msgid "Some settings or files were skipped. See the diagnostic log for details."
 msgstr "Некоторые настройки или файлы пропущены. Подробности доступны в журнале диагностики."
+
+msgid "Choose a backup made with SaveDesktop Plus. Opening it checks which items are available. It does not change your files or settings."
+msgstr "Выберите резервную копию SaveDesktop Plus. Программа проверит, что в ней есть. При открытии копии файлы и настройки не меняются."
+
+msgid "The wizard walks through the choices in order. Manual mode shows all the choices together. Switching keeps your current choices and uses the same checks."
+msgstr "Мастер показывает выбор по шагам. В ручном режиме все варианты видны вместе. Выбранные параметры сохраняются, проверки одинаковы."
+
+msgid "Select this to restore saved system and desktop environment settings. Current settings may be replaced. Leave it off to keep them. Select it when you want the saved desktop environment back."
+msgstr "Включите, чтобы вернуть настройки рабочего окружения из копии. Текущие настройки могут измениться. Чтобы сохранить их, оставьте этот параметр выключенным."
+
+msgid "Select this to restore the wallpaper and how it is displayed. Your current wallpaper will be replaced if the image is available. Leave it off to keep your current wallpaper."
+msgstr "Включите, чтобы вернуть изображение обоев и способ отображения. Если изображение доступно, оно заменит текущие обои. Чтобы оставить текущие обои, выключите параметр."
+
+msgid "Select this to restore icon size, spacing, position and other desktop settings. Desktop files are controlled separately. Finish all copying and moving before applying these settings. Leave it off to keep your current layout."
+msgstr "Включите, чтобы вернуть размер, расположение и интервалы значков. Файлы рабочего стола выбираются отдельно. Перед применением завершите копирование и перемещение файлов. Чтобы оставить текущее расположение значков, выключите параметр."
+
+msgid "Select this to restore files, folders and shortcuts on the desktop. Existing files with different contents are kept. Leave this off if you only want to restore how the desktop looks."
+msgstr "Включите, чтобы вернуть файлы, папки и ярлыки рабочего стола. Существующие файлы с другим содержимым сохранятся. Если нужно только оформление, оставьте параметр выключенным."
+
+msgid "Select this to restore files from the custom folders in the backup. You can choose where each folder goes or skip it. Existing personal files with different contents are kept. Leave this off to keep your folders unchanged."
+msgstr "Включите, чтобы вернуть личные файлы из копии. Можно выбрать место для каждой папки или пропустить её. Существующие файлы с другим содержимым сохранятся. Чтобы оставить папки без изменений, выключите параметр."
+
+msgid "This is where the files from the backup will go. Use the suggested folder if it belongs to the current account and is where you want the files. Existing personal files with different contents are kept. Select a different folder or clear the check box to skip this folder. If asked, give access in the folder chooser."
+msgstr "Сюда будут записаны файлы из копии. Воспользуйтесь предложенной папкой, если она принадлежит вашей учётной записи и подходит вам. Существующие файлы с другим содержимым сохранятся. Можно выбрать другую папку или снять отметку. При необходимости подтвердите доступ в окне выбора папки."
+
+msgid "Select this to reinstall missing Flatpak apps from the backup. Existing apps are kept unless you explicitly allow removal. App data are selected separately. An internet connection and, for system apps, permission to install may be needed."
+msgstr "Включите, чтобы установить отсутствующие приложения из копии. Установленные приложения сохранятся, пока вы явно не выберете удаление. Данные выбираются отдельно. Может потребоваться интернет и системное разрешение на установку."
+
+msgid "Select this to restore saved data such as app preferences. Existing app data are kept in a recovery copy before replacement. Close the affected apps and keep them closed until the restore finishes. Leave this off if you only want to install the apps."
+msgstr "Включите, чтобы вернуть сохранённые настройки и данные приложений. Прежние данные сохраняются в защитной копии. Закройте приложения до конца восстановления. Если нужна только установка, оставьте параметр выключенным."
+
+msgid "Keep this on to retain your current apps. Turning it off allows removal of Flatpak apps missing from the backup. Their personal data are retained. For example, an editor installed after this backup may be uninstalled. Keeping your apps is recommended unless you want the saved app list."
+msgstr "Оставьте включённым, чтобы сохранить установленные приложения. Если выключить параметр, приложения, которых нет в копии, могут быть удалены. Их данные сохранятся. Например, можно удалить редактор, установленный после создания копии."
+
+msgid "Select this to restore saved icon themes as part of system settings. Themes with matching names may be updated. Leave this off to retain the themes already present."
+msgstr "Включите, чтобы вернуть темы значков. Одноимённые темы могут измениться. Чтобы сохранить текущие темы, выключите параметр."
+
+msgid "Select this to restore saved appearance themes as part of system settings. Themes with matching names may be updated. Leave this off if you want to keep the themes already present."
+msgstr "Включите, чтобы вернуть темы оформления. Одноимённые темы могут измениться. Чтобы сохранить текущие темы, выключите параметр."
+
+msgid "Select this to restore the saved fonts. Fonts with matching names may be updated. Leave this off if the current fonts already meet your needs."
+msgstr "Включите, чтобы вернуть шрифты из копии. Одноимённые шрифты могут измениться. Если текущих шрифтов достаточно, оставьте параметр выключенным."
+
+msgid "Select this to restore saved shortcuts to folders in the file manager. Leave it off to keep your current bookmarks. A shortcut may point to a folder that is not on this computer."
+msgstr "Включите, чтобы вернуть закладки папок в файловом менеджере. Если выключить, текущие закладки сохранятся. Некоторые закладки могут вести к папкам, которых нет на этом компьютере."
+
+msgid "Select this to restore saved desktop extensions and applets. Existing versions with matching names may be replaced. Leave this off if you want to keep the current extensions."
+msgstr "Включите, чтобы вернуть дополнения рабочего стола и панели. Одноимённые версии могут измениться. Чтобы оставить текущие дополнения, выключите параметр."
+
+msgid "Keep this on to reuse your component choices and folder destinations. The next restore checks them again. Removing apps always needs a new choice. Turning this off clears the saved restore choices."
+msgstr "Оставьте включённым, чтобы повторно использовать выбор компонентов и папок. Перед восстановлением программа их проверит. Удаление приложений выбирается заново. Отключение очищает сохранённый выбор."
+
+msgid "Help: {parameter}"
+msgstr "Справка: {parameter}"
+
+msgid "Close help"
+msgstr "Закрыть справку"
+
+msgid "Desktop environment settings"
+msgstr "Настройки рабочего окружения"
+
+msgid "My files and folders"
+msgstr "Мои файлы и папки"
+
+msgid "Desktop settings"
+msgstr "Настройки рабочего стола"
+
+msgid "Restore apps"
+msgstr "Восстановить приложения"
+
+msgid "Restore app settings and data"
+msgstr "Восстановить настройки и данные приложений"
+
+msgid "Remember restore choices"
+msgstr "Запомнить параметры восстановления"
+
+msgid "Backup"
+msgstr "Резервная копия"
+
+msgid "Wizard"
+msgstr "Мастер"
+
+msgid "Manual mode"
+msgstr "Ручной режим"
+
+msgid "Restore mode"
+msgstr "Режим восстановления"
+
+msgid "Folder destinations"
+msgstr "Куда восстановить папки"
+
+msgid "Additional restore settings"
+msgstr "Дополнительные параметры"
+
+msgid "Use recommended settings"
+msgstr "Вернуть рекомендуемые параметры"
+
+msgid "Back"
+msgstr "Назад"
+
+msgid "Continue"
+msgstr "Продолжить"
+
+msgid "Choose applications"
+msgstr "Выбрать приложения"
+
+msgid "Select all"
+msgstr "Выбрать все"
+
+msgid "Clear selection"
+msgstr "Снять выбор со всех"
+
+msgid "Unavailable in this backup or on this desktop."
+msgstr "Недоступно в этой копии или в текущем окружении."
+
+msgid "What should be restored?"
+msgstr "Что восстановить?"
+
+msgid "Apps missing from the backup may be removed. Their personal data will be kept."
+msgstr "Приложения, которых нет в копии, могут быть удалены. Их пользовательские данные сохранятся."
+
+msgid "Selected: {count}"
+msgstr "Выбрано: {count}"
+
+msgid "Folder access has changed. Choose the folder again or skip it."
+msgstr "Доступ к папке изменился. Выберите папку снова или пропустите её."
+
+msgid "Choose a destination for each selected folder, or clear its check box."
+msgstr "Укажите место для каждой выбранной папки или снимите с неё отметку."
+
+msgid "Applying the remaining changes…"
+msgstr "Применяем оставшиеся изменения…"
+
+msgid "Confirm the selected changes in the system window…"
+msgstr "Подтвердите выбранные изменения в системном окне…"
+
+msgid "Existing files were kept. Files skipped from the backup are listed in the diagnostic log."
+msgstr "Существующие файлы сохранены. Пропущенные файлы из копии перечислены в журнале диагностики."
+
+msgid "Apply and finish at next sign-in"
+msgstr "Применить и завершить при следующем входе"
+
+msgid "Nothing requires the restore helper."
+msgstr "Выбранные изменения можно применить сразу."
+
+msgid "The backup could not be prepared."
+msgstr "Не удалось подготовить резервную копию к восстановлению."
+
+msgid "Wallpaper was kept because a different image already exists at its destination."
+msgstr "Текущие обои сохранены: в выбранной папке уже есть другое изображение с таким именем."

@@ -1,16 +1,19 @@
 # List of source files containing translatable strings.
 # Please keep this file sorted alphabetically.
 data/io.github.ivanniks_sudo.SaveDesktopPlus.desktop.in
-data/io.github.ivanniks_sudo.SaveDesktopPlus.metainfo.xml.in
 data/io.github.ivanniks_sudo.SaveDesktopPlus.gschema.xml
+data/io.github.ivanniks_sudo.SaveDesktopPlus.metainfo.xml.in
 src/core/custom_dirs.py
+src/core/session_restore_host.py
 src/core/synchronization.py
 src/core/wallpaper.py
 src/gui/custom_dirs_dialog.py
-src/gui/more_options_dialog.py
 src/gui/items_dialog.py
+src/gui/more_options_dialog.py
 src/gui/password_checker.py
 src/gui/restore_folders_dialog.py
+src/gui/restore_help.py
+src/gui/restore_options.py
 src/gui/synchronization_dialogs.py
 src/gui/templates/shortcuts_window.ui
 src/gui/window.py

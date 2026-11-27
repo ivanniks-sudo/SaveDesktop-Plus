@@ -125,5 +125,9 @@
 		    <default>true</default>
 		    <summary>Set showing the initial synchronization setup dialog</summary>
 		</key>
+        <key name="restore-mode" type="s"><default>'wizard'</default></key>
+        <key name="restore-choices" type="s"><default>'{}'</default></key>
+        <key name="restore-remember" type="b"><default>true</default></key>
+        <key name="restore-expand-options" type="b"><default>false</default></key>
 	</schema>
 </schemalist>

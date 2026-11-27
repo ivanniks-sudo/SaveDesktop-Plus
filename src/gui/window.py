@@ -10,13 +10,14 @@ from threading import Thread
 from savedesktop.globals import *
 from savedesktop.gui.more_options_dialog import MoreOptionsDialog
 from savedesktop.gui.items_dialog import itemsDialog
-from savedesktop.gui.restore_folders_dialog import RestoreFoldersDialog
+from savedesktop.gui.restore_options import RestoreOptions
 from savedesktop.core.backup_input import prepare_backup
 from savedesktop.core.custom_dirs import read_folder_metadata
 from savedesktop.core.desktop_configuration import filter_desktop_settings
 from savedesktop.core.operation_notices import operation_notices
 from savedesktop.core.restore_completion import HOST_BUILD, HOST_PROTOCOL, STEP, read_completion, restart_cinnamon
 from savedesktop.core.de_config import prepare_session_launcher
+from savedesktop.core.flatpaks_installer import PROTECTED_APPS, desired_apps
 from savedesktop.core.wallpaper import split_wallpaper
 from savedesktop.gui.synchronization_dialogs import InitSetupDialog, SetDialog, CloudDialog
 
@@ -370,10 +371,19 @@ class MainWindow(Adw.ApplicationWindow):
         self.import_session = object()
         self.import_cancelled = False
         self.import_restart_requested = False
+        self.authorized_restore = None
         self.stack.set_visible_child_name("importpage")
         return self.import_session
 
     def _finish_import_session(self):
+        approved = getattr(self, "authorized_restore", None)
+        if approved:
+            bus, job = approved
+            service = APP_ID + ".RestoreHost"
+            bus.call(service, "/" + service.replace(".", "/"), service, "CancelRestore",
+                     GLib.Variant("(s)", (job,)), None, Gio.DBusCallFlags.NO_AUTO_START, 1000, None, None)
+            self.authorized_restore = None
+        self._remove_restore_staging(getattr(self, "restore_options", {}).get("job"))
         self.import_session = None
         self.toast_overlay.dismiss_all()
         self.stack.set_visible_child_name("importpage")
@@ -568,11 +578,20 @@ class MainWindow(Adw.ApplicationWindow):
                 general = root / "General" if (root / "General").is_dir() else root
                 dump, wallpaper = split_wallpaper((general / "dconf-settings.ini").read_text(encoding="utf-8"))
                 nemo_metadata = any(path in paths for path in ("General/NemoDesktop.ini", "DE/nemo/desktop-metadata", "nemo/desktop-metadata"))
+                section = root / "Flatpak_Apps"
+                try:
+                    application_ids = sorted({app for _, app in desired_apps(
+                        section if section.is_dir() else root, PROTECTED_APPS)})
+                except ValueError:
+                    application_ids = []
                 available = {
+                    "application_ids": application_ids,
                     "nemo_metadata": nemo_metadata,
                     "wallpaper": bool(wallpaper) or any(path in paths for path in ("General/backgrounds", "General/wallpapers", "backgrounds", "wallpapers")),
                     "configuration": filter_desktop_settings(dump, True) != filter_desktop_settings(dump, False)
                     or nemo_metadata,
+                    "flatpak_apps": flatpak and any(Path(path).name in ("installed_flatpaks.sh", "installed_user_flatpaks.sh") for path in paths),
+                    "flatpak_data": flatpak and any(Path(path).name == "flatpak-apps-data.tgz" or path.startswith("app/") for path in paths),
                     "contents": any(path in paths for path in ("General/desktop-folder.tgz", "desktop-folder.tgz")),
                 }
         except (ValueError, OSError) as error:
@@ -589,38 +608,23 @@ class MainWindow(Adw.ApplicationWindow):
         if self.import_session is not session:
             return
         self.toast_overlay.dismiss_all()
-        self.restore_folders = folders
         self.restore_has_nemo_metadata = available.get("nemo_metadata", False)
-        self.items_dialog = itemsDialog(self, paths, desktop_available=available)
-        self.items_dialog.connect("response", self._on_items_dialog_response)
+        cinnamon = bool(environment and environment["de_name"] == "Cinnamon")
+        self.items_dialog = RestoreOptions(
+            self, Path(self.archive_name).name, paths, folders, available, cinnamon,
+            self._accept_restore_options, self._needs_restore_host,
+        )
         self.items_dialog.present(self)
 
-    def _on_items_dialog_response(self, dialog, response, *args):
-        if response != "ok":
-            self._finish_folder_plan(None)
-            return
-        self.restore_options["system_settings"] = dialog.system_settings.get_active()
-        self.restore_options["wallpaper"] = dialog.switch_04.get_active()
-        self.restore_options["desktop_contents"] = dialog.switch_de.get_active()
-        for key, attribute in (("flatpak_apps", "switch_05"), ("flatpak_data", "switch_06"),
-                               ("keep_flatpaks", "switch_07")):
-            widget = getattr(dialog, attribute, None)
-            self.restore_options[key] = widget.get_active() if widget is not None else key == "keep_flatpaks"
-        if hasattr(dialog, "desktop_configuration"):
-            self.restore_options["desktop_configuration"] = dialog.desktop_configuration.get_active()
-        if self.restore_folders and dialog.custom_switch.get_active():
-            RestoreFoldersDialog(
-                self, self.restore_folders, bool(environment and environment["de_name"] == "Cinnamon"),
-                self._finish_folder_plan,
-            ).present(self)
-        else:
-            self._finish_folder_plan({})
+    def _needs_restore_host(self, options):
+        return ((self.restore_has_nemo_metadata and options.get("desktop_configuration")) or
+                options.get("flatpak_apps") or options.get("flatpak_data"))
 
-    def _finish_folder_plan(self, plan):
-        if plan is None:
+    def _accept_restore_options(self, options):
+        if options is None:
             self._finish_import_session()
             return
-        self.restore_options["folders"] = plan
+        self.restore_options.update(options)
         self._start_gui()
 
     def _start_gui(self):
@@ -629,13 +633,14 @@ class MainWindow(Adw.ApplicationWindow):
         self.host_skip = False
         self.please_wait()
         self._add_restore_log()
-        if ((self.restore_has_nemo_metadata and self.restore_options.get("desktop_configuration")) or
-                self.restore_options.get("flatpak_apps") or self.restore_options.get("flatpak_data")):
+        if self._needs_restore_host(self.restore_options):
             self._check_restore_host()
         else:
             self._run_archive_restore()
 
     def _run_archive_restore(self):
+        self.cancel_button.set_sensitive(True)
+        self.archive_proc = None
         self.status_page.set_child(None)
         self.status_page.set_description(_("Preparing the selected components…"))
         Thread(target=self._call_archive_command, args=(self.import_session,), daemon=True).start()
@@ -651,14 +656,13 @@ class MainWindow(Adw.ApplicationWindow):
                 prepare_session_launcher()
             except (OSError, ValueError, GLib.Error) as error:
                 self._log_restore(str(error))
-                self.host_skip = True
-                self._run_archive_restore()
+                self._restore_summary({}, "", error=True)
                 return
             self.status_page.set_description(
                 _("Open “SaveDesktop Plus — Set up restoration” from the system menu. "
                   "Restoration will continue automatically after this one-time setup or update.")
             )
-            skip = Gtk.Button(label=_("Continue without the helper"), halign=Gtk.Align.CENTER)
+            skip = Gtk.Button(label=_("Apply and finish at next sign-in"), halign=Gtk.Align.CENTER)
             self.status_page.set_child(skip)
 
             def skip_setup(_button):
@@ -689,7 +693,8 @@ class MainWindow(Adw.ApplicationWindow):
                 return
             if not self.restore_host_ready:
                 self.restore_host_ready = True
-                self._run_archive_restore()
+                self.status_page.set_child(None)
+                self._stage_restore_for_confirmation(session, connection)
 
         try:
             bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
@@ -699,6 +704,75 @@ class MainWindow(Adw.ApplicationWindow):
             return
         bus.call(service, "/" + service.replace(".", "/"), service, "GetProtocol",
                  None, GLib.VariantType.new("(us)"), Gio.DBusCallFlags.NONE, 3000, None, finished)
+
+    def _stage_restore_for_confirmation(self, session, bus):
+        self.status_page.set_description(_("Preparing the selected components…"))
+        job = self.restore_options["job"]
+        command = [sys.executable, "-m", "savedesktop.core.archive", "--prepare-restore", self.archive_name]
+        options = json.dumps(self.restore_options)
+
+        def ready(completion, error):
+            if self.import_session is not session or self.import_cancelled:
+                self._remove_restore_staging(job)
+                return False
+            if error:
+                self._log_restore(error)
+                self._restore_summary({}, "", error=True)
+                return False
+            flags = (bool(completion.get("nemo_pending")), bool(completion.get("flatpaks_pending")))
+            if not any(flags):
+                self.status_page.set_description(_("Nothing requires the restore helper."))
+                apply = Gtk.Button(label=_("Apply"), halign=Gtk.Align.CENTER)
+                apply.connect("clicked", lambda _: self._run_archive_restore())
+                self.status_page.set_child(apply)
+                return False
+            self.status_page.set_description(_("Confirm the selected changes in the system window…"))
+            self.cancel_button.set_sensitive(False)
+            service = APP_ID + ".RestoreHost"
+
+            def approved(connection, result):
+                if self.import_session is not session:
+                    return
+                try:
+                    accepted, = connection.call_finish(result).unpack()
+                except GLib.Error as problem:
+                    self._log_restore(str(problem))
+                    self._restore_summary({}, "", error=True)
+                    return
+                if accepted:
+                    self.authorized_restore = (connection, job)
+                    self._run_archive_restore()
+                else:
+                    self.cancel_button.set_sensitive(True)
+                    self._cancel(None)
+
+            bus.call(service, "/" + service.replace(".", "/"), service, "AuthorizeRestore",
+                     GLib.Variant("(sbb)", (job, *flags)), GLib.VariantType.new("(b)"),
+                     Gio.DBusCallFlags.NONE, 2 ** 31 - 1, None, approved)
+            return False
+
+        def prepare():
+            try:
+                proc = subprocess.Popen(command, text=True, stdin=subprocess.PIPE,
+                                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                        env={**os.environ, "PYTHONPATH": app_prefix})
+                if self.import_session is session:
+                    self.archive_proc = proc
+                if self.import_session is not session or self.import_cancelled:
+                    proc.terminate()
+                output, _unused = proc.communicate(options)
+                completion = read_completion(output)
+                error = output or _("The backup could not be prepared.") if proc.returncode or not completion else ""
+            except (OSError, ValueError) as problem:
+                completion, error = {}, str(problem)
+            GLib.idle_add(ready, completion, error)
+
+        Thread(target=prepare, daemon=True).start()
+
+    @staticmethod
+    def _remove_restore_staging(job):
+        if job:
+            shutil.rmtree(Path(CACHE) / "restore-jobs" / job, ignore_errors=True)
 
     def _add_restore_log(self):
         self.restore_host_ready = False
@@ -720,13 +794,13 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _restore_labels(self):
         return {
-            "settings": _("System settings"),
-            "folders": _("Custom folders"),
+            "settings": _("Desktop environment settings"),
+            "folders": _("My files and folders"),
             "wallpaper": _("Wallpaper"),
             "desktop_files": _("Desktop files and folders"),
-            "desktop_layout": _("Desktop configuration"),
-            "flatpak_apps": _("Flatpak applications"),
-            "flatpak_data": _("Flatpak application data"),
+            "desktop_layout": _("Desktop settings"),
+            "flatpak_apps": _("Restore apps"),
+            "flatpak_data": _("Restore app settings and data"),
             "prepare_apps": _("Preparing the selected Flatpak components…"),
         }
 
@@ -840,7 +914,7 @@ class MainWindow(Adw.ApplicationWindow):
             self._restore_summary(completion, message)
             return
 
-        self.status_page.set_description(_("Waiting for the host confirmation…"))
+        self.status_page.set_description(_("Applying the remaining changes…"))
         self.cancel_button.set_sensitive(False)
         service = APP_ID + ".RestoreHost"
         path = "/" + service.replace(".", "/")
@@ -882,6 +956,7 @@ class MainWindow(Adw.ApplicationWindow):
             return
         subscription = bus.signal_subscribe(service, service, "Progress", path, job,
                                             Gio.DBusSignalFlags.NONE, progress)
+        self.authorized_restore = None
         bus.call(service, path, service, "StartRestore",
                  GLib.Variant("(sbb)", (job, bool(completion.get("nemo_pending")),
                                        bool(completion.get("flatpaks_pending")))),
@@ -913,6 +988,8 @@ class MainWindow(Adw.ApplicationWindow):
             lines.append(_("The desktop layout remains queued for the next sign-in."))
         if any(self.restore_states.get(key) == "partial" for key in ("flatpak_apps", "flatpak_data")):
             lines.append(_("Review the log. Close affected apps before retrying, and check availability of the installation sources."))
+        if any(self.restore_states.get(key) == "partial" for key in ("folders", "desktop_files", "wallpaper")):
+            lines.append(_("Existing files were kept. Files skipped from the backup are listed in the diagnostic log."))
         if message and not error:
             lines.append(_("Some settings or files were skipped. See the diagnostic log for details."))
         if error:

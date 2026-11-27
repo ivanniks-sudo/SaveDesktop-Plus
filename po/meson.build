@@ -1,1 +1,1 @@
-i18n.gettext('savedesktop', preset: 'glib')
+i18n.gettext('savedesktop', preset: 'glib', args: ['--keyword=N_'])
