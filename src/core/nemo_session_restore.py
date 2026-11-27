@@ -1,5 +1,8 @@
 """Apply queued desktop metadata before Cinnamon starts nemo-desktop."""
+from contextlib import contextmanager
+import fcntl
 import json
+import os
 from pathlib import Path
 import re
 from tempfile import NamedTemporaryFile
@@ -47,9 +50,26 @@ def fit_system_icons(data, monitors):
                 data.remove_key(group, key)
 
 
+@contextmanager
+def pending_lock(state):
+    lock_path = state / "nemo-desktop.lock"
+    descriptor = os.open(lock_path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    try:
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(descriptor)
+
+
 def apply_pending(pending, destination):
-    if not pending.exists():
+    if not pending.parent.is_dir():
         return
+    with pending_lock(pending.parent):
+        if pending.exists():
+            _apply_pending(pending, destination)
+
+
+def _apply_pending(pending, destination):
     if pending.is_symlink() or any(path.is_symlink() for path in (destination, *destination.parents)):
         raise ValueError("Symbolic link in Nemo desktop metadata restore")
 

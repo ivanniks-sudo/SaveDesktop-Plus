@@ -72,8 +72,7 @@ class NemoMetadata(unittest.TestCase):
                 "[foreign.volume]\nmonitor=2\n"
             )
             app = "io.github.ivanniks_sudo.SaveDesktopPlus"
-            with patch("savedesktop.core.desktop_configuration.warn"):
-                queue_desktop_configuration(root, config, app, [(1024, 768)])
+            self.assertTrue(queue_desktop_configuration(root, config, app, [(1024, 768)]))
             self.assertEqual(read_keyfile(dest).get_value("home", "nemo-icon-position"), "1,2")
             with dest.open("a") as live:
                 live.write("[phone.volume]\nmonitor=0\n")

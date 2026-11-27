@@ -1,18 +1,13 @@
 """Cinnamon/Nemo desktop settings, independent of files on the desktop."""
 import json
-from gettext import translation
-import os
 from pathlib import Path
 import tempfile
 
 from gi.repository import GLib
 
 from savedesktop.core.backup_input import restore_file
-from savedesktop.core.operation_notices import warn
 from savedesktop.core import nemo_session_restore
 from savedesktop.core.nemo_session_restore import NEMO_FILE, merge_desktop_metadata, read_keyfile
-
-_ = translation("savedesktop", localedir=os.getenv("SAVEDESKTOP_LOCALE"), fallback=True).gettext
 
 ARCHIVE_FILE = "General/NemoDesktop.ini"
 SHARED_SETTINGS = {
@@ -58,7 +53,7 @@ def queue_desktop_configuration(root, config, app_id, monitors):
         data = GLib.KeyFile()
         merge_desktop_metadata(read_keyfile(source), data)
         if not data.get_groups()[0]:
-            return
+            continue
         state = config / app_id
         helper = state / "nemo_session_restore.py"
         autostart = config / "autostart" / f"{app_id}.NemoDesktop.desktop"
@@ -81,7 +76,8 @@ def queue_desktop_configuration(root, config, app_id, monitors):
             payload = staging / "nemo-desktop-pending.json"
             payload.write_text(json.dumps({"metadata": data.to_data()[0], "monitors": monitors}), encoding="utf-8")
             restore_file(Path(nemo_session_restore.__file__), helper)
-            restore_file(desktop_file, autostart)
-            restore_file(payload, state / payload.name)
-        warn(_("Nemo desktop layout will be applied the next time you sign in to Cinnamon."))
-        return
+            with nemo_session_restore.pending_lock(state):
+                restore_file(desktop_file, autostart)
+                restore_file(payload, state / payload.name)
+        return True
+    return False
