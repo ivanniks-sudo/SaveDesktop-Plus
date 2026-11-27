@@ -86,7 +86,8 @@ class RestoreOptions(Adw.AlertDialog):
         advanced.set_child(extras)
         self.components.append(advanced)
 
-        reset = Gtk.Button(label=_("Use recommended settings"), halign=Gtk.Align.START, css_classes=["flat"])
+        reset_label = Gtk.Label(label=_("Use recommended settings"), wrap=True, xalign=0)
+        reset = Gtk.Button(child=reset_label, halign=Gtk.Align.START, css_classes=["flat"])
         reset.connect("clicked", self._reset)
         self.components.append(reset)
         self.pages.add_named(self.components, "components")
