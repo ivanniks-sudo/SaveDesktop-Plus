@@ -1,4 +1,5 @@
 import os, sys, shutil, subprocess, argparse, re, json, signal, tempfile
+from gettext import translation
 from pathlib import Path
 from savedesktop.globals import *
 from savedesktop.core.password_store import PasswordStore
@@ -7,6 +8,8 @@ from savedesktop.core.backup_input import HOME_PATH, ZipPath, prepare_backup, pu
 from savedesktop.core.wallpaper import split_wallpaper
 from savedesktop.core.operation_notices import warn
 from savedesktop.core.desktop_configuration import filter_desktop_settings
+
+_ = translation("savedesktop", localedir=os.getenv("SAVEDESKTOP_LOCALE"), fallback=True).gettext
 
 TEMP_CACHE = f"{CACHE}/workspace"
 temp_file = f"{CACHE}/temp_file"
