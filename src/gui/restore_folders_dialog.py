@@ -210,6 +210,9 @@ class RestoreFoldersDialog(Adw.AlertDialog):
         self.add_response("ok", _("Restore"))
         self.set_response_appearance("ok", Adw.ResponseAppearance.SUGGESTED)
         self.connect("response", self._respond)
+        for row in self.rows:
+            if row["error"]:
+                row["selected"].set_active(False)
         self._update_apply()
 
     def _plan(self):
