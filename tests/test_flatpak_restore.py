@@ -88,7 +88,7 @@ class FlatpakRestore(unittest.TestCase):
         self.assertTrue(PROTECTED_APPS.issubset(self.installed["--user"]))
         for scope in ("--user", "--system"):
             self.assertIn(
-                ("remote-add", scope, "--if-not-exists", "--noninteractive",
+                ("remote-add", scope, "--if-not-exists",
                  "flathub", "https://dl.flathub.org/repo/flathub.flatpakrepo"),
                 self.calls,
             )

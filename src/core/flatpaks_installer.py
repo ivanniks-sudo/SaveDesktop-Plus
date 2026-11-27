@@ -114,7 +114,7 @@ def restore(workspace, home):
     for index, (scope, app) in enumerate(sorted(missing), 1):
         print(f"↓ Installing {app} ({index}/{len(missing)})", flush=True)
         try:
-            run("remote-add", scope, "--if-not-exists", "--noninteractive", "flathub", FLATHUB)
+            run("remote-add", scope, "--if-not-exists", "flathub", FLATHUB)
             run("install", scope, "--noninteractive", "-y", "flathub", app)
         except (OSError, subprocess.CalledProcessError) as error:
             failures.append(f"{app} ({scope}): {error}")
@@ -192,7 +192,9 @@ def restore_and_log(workspace, home, autostart):
     if finished.exists():
         print("This Flatpak restore has already completed.")
         return 0
-    with (workspace / "log.pipe").open("w", encoding="utf-8", buffering=1) as log:
+    log_path = workspace / "log.pipe"
+    print(f"Flatpak restore log: {log_path}", flush=True)
+    with log_path.open("w", encoding="utf-8", buffering=1) as log:
         # Also send the Flatpak subprocess output to the status window.
         sys.stdout.flush()
         os.dup2(log.fileno(), 1)
