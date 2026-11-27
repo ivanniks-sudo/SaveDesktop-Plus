@@ -5,7 +5,7 @@ gi.require_version('Adw', '1')
 from gi.repository import Gtk, Adw, Gio, GLib, Gdk
 from datetime import date
 from pathlib import Path
-from shlex import quote
+from uuid import uuid4
 from threading import Thread
 from savedesktop.globals import *
 from savedesktop.gui.more_options_dialog import MoreOptionsDialog
@@ -15,7 +15,8 @@ from savedesktop.core.backup_input import prepare_backup
 from savedesktop.core.custom_dirs import read_folder_metadata
 from savedesktop.core.desktop_configuration import filter_desktop_settings
 from savedesktop.core.operation_notices import operation_notices
-from savedesktop.core.restore_completion import read_completion, restart_cinnamon
+from savedesktop.core.restore_completion import HOST_PROTOCOL, STEP, read_completion, restart_cinnamon
+from savedesktop.core.de_config import prepare_session_launcher
 from savedesktop.core.wallpaper import split_wallpaper
 from savedesktop.gui.synchronization_dialogs import InitSetupDialog, SetDialog, CloudDialog
 
@@ -548,12 +549,9 @@ class MainWindow(Adw.ApplicationWindow):
 
         self.archive_name = self.path_to_import
         self.archive_mode = "--unpack"
-        self.status_title = _("<big><b>Importing configuration …</b></big>\nImporting configuration from:\n<i>{}</i>\n").split('</b>')[0].split('<b>')[-1]
-        self.status_desc = _("<big><b>Importing configuration …</b></big>\nImporting configuration from:\n<i>{}</i>\n").format(self.archive_name)
-        self.done_title = _("The configuration has been applied!")
-        self.done_desc = _("<big><b>{}</b></big>\nYou can log out of the system for the changes to take effect, or go back to the previous page and log out later.\n\n<i>If your archive contains Flatpak apps, they will start installing after the next login.</i>").format(_("The configuration has been applied!"))
-
-        self.restore_options = {}
+        self.status_title = _("Restoring backup")
+        self.status_desc = _("Preparing the selected components…")
+        self.restore_options = {"job": str(uuid4())}
         session = self.import_session
         notice = Adw.Toast(title=_("Analyzing backup…"), timeout=0, button_label=_("Cancel"))
         notice.connect("button-clicked", lambda _toast: self._finish_import_session() if self.import_session is session else None)
@@ -569,10 +567,12 @@ class MainWindow(Adw.ApplicationWindow):
                 folders = read_folder_metadata(root)
                 general = root / "General" if (root / "General").is_dir() else root
                 dump, wallpaper = split_wallpaper((general / "dconf-settings.ini").read_text(encoding="utf-8"))
+                nemo_metadata = any(path in paths for path in ("General/NemoDesktop.ini", "DE/nemo/desktop-metadata", "nemo/desktop-metadata"))
                 available = {
+                    "nemo_metadata": nemo_metadata,
                     "wallpaper": bool(wallpaper) or any(path in paths for path in ("General/backgrounds", "General/wallpapers", "backgrounds", "wallpapers")),
                     "configuration": filter_desktop_settings(dump, True) != filter_desktop_settings(dump, False)
-                    or any(path in paths for path in ("General/NemoDesktop.ini", "DE/nemo/desktop-metadata", "nemo/desktop-metadata")),
+                    or nemo_metadata,
                     "contents": any(path in paths for path in ("General/desktop-folder.tgz", "desktop-folder.tgz")),
                 }
         except (ValueError, OSError) as error:
@@ -590,6 +590,7 @@ class MainWindow(Adw.ApplicationWindow):
             return
         self.toast_overlay.dismiss_all()
         self.restore_folders = folders
+        self.restore_has_nemo_metadata = available.get("nemo_metadata", False)
         self.items_dialog = itemsDialog(self, paths, desktop_available=available)
         self.items_dialog.connect("response", self._on_items_dialog_response)
         self.items_dialog.present(self)
@@ -598,8 +599,13 @@ class MainWindow(Adw.ApplicationWindow):
         if response != "ok":
             self._finish_folder_plan(None)
             return
+        self.restore_options["system_settings"] = dialog.system_settings.get_active()
         self.restore_options["wallpaper"] = dialog.switch_04.get_active()
         self.restore_options["desktop_contents"] = dialog.switch_de.get_active()
+        for key, attribute in (("flatpak_apps", "switch_05"), ("flatpak_data", "switch_06"),
+                               ("keep_flatpaks", "switch_07")):
+            widget = getattr(dialog, attribute, None)
+            self.restore_options[key] = widget.get_active() if widget is not None else key == "keep_flatpaks"
         if hasattr(dialog, "desktop_configuration"):
             self.restore_options["desktop_configuration"] = dialog.desktop_configuration.get_active()
         if self.restore_folders and dialog.custom_switch.get_active():
@@ -618,30 +624,171 @@ class MainWindow(Adw.ApplicationWindow):
         self._start_gui()
 
     def _start_gui(self):
+        self.restore_states = {}
+        self.archive_proc = None
+        self.host_skip = False
         self.please_wait()
-        import_thread = Thread(target=self._call_archive_command)
-        import_thread.start()
+        self._add_restore_log()
+        if ((self.restore_has_nemo_metadata and self.restore_options.get("desktop_configuration")) or
+                self.restore_options.get("flatpak_apps") or self.restore_options.get("flatpak_data")):
+            self._check_restore_host()
+        else:
+            self._run_archive_restore()
 
-    def _call_archive_command(self):
+    def _run_archive_restore(self):
+        self.status_page.set_child(None)
+        self.status_page.set_description(_("Preparing the selected components…"))
+        Thread(target=self._call_archive_command, args=(self.import_session,), daemon=True).start()
+
+    def _check_restore_host(self, preparing=False):
+        session = self.import_session
+        service = APP_ID + ".RestoreHost"
+
+        def unavailable():
+            if preparing or self.import_session is not session:
+                return
+            try:
+                prepare_session_launcher()
+            except (OSError, ValueError, GLib.Error) as error:
+                self._log_restore(str(error))
+                self.host_skip = True
+                self._run_archive_restore()
+                return
+            self.status_page.set_description(
+                _("Open “SaveDesktop Plus — Set up restoration” from the system menu. "
+                  "Restoration will continue automatically after this one-time setup or update.")
+            )
+            skip = Gtk.Button(label=_("Continue without the helper"), halign=Gtk.Align.CENTER)
+            self.status_page.set_child(skip)
+
+            def skip_setup(_button):
+                self.host_skip = True
+                self._run_archive_restore()
+
+            def check_again():
+                if self.import_session is not session or self.host_skip or self.status_page.get_child() is not skip:
+                    return False
+                self._check_restore_host(preparing=True)
+                return True
+
+            skip.connect("clicked", skip_setup)
+            GLib.timeout_add_seconds(2, check_again)
+
+        def finished(connection, result):
+            if self.import_session is not session or self.host_skip or self.import_cancelled:
+                return
+            try:
+                version, = connection.call_finish(result).unpack()
+            except GLib.Error as error:
+                if not preparing:
+                    self._log_restore(str(error))
+                unavailable()
+                return
+            if version != HOST_PROTOCOL:
+                unavailable()
+                return
+            if not self.restore_host_ready:
+                self.restore_host_ready = True
+                self._run_archive_restore()
+
+        try:
+            bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+        except GLib.Error as error:
+            self._log_restore(str(error))
+            unavailable()
+            return
+        bus.call(service, "/" + service.replace(".", "/"), service, "GetProtocol",
+                 None, GLib.VariantType.new("(u)"), Gio.DBusCallFlags.NONE, 3000, None, finished)
+
+    def _add_restore_log(self):
+        self.restore_host_ready = False
+        listing = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE, css_classes=["boxed-list"])
+        listing.set_margin_start(16)
+        listing.set_margin_end(16)
+        row = Adw.ExpanderRow(title=_("Diagnostic log"))
+        listing.append(row)
+        view = Gtk.TextView(editable=False, monospace=True, wrap_mode=Gtk.WrapMode.CHAR)
+        self.restore_log = view.get_buffer()
+        scroller = Gtk.ScrolledWindow(min_content_height=120, max_content_height=220)
+        scroller.set_child(view)
+        row.add_row(scroller)
+        self.status_box.append(listing)
+
+    def _log_restore(self, line):
+        self.restore_log.insert(self.restore_log.get_end_iter(), line.rstrip() + "\n")
+        return False
+
+    def _restore_labels(self):
+        return {
+            "settings": _("System settings"),
+            "folders": _("Custom folders"),
+            "wallpaper": _("Wallpaper"),
+            "desktop_files": _("Desktop files and folders"),
+            "desktop_layout": _("Desktop configuration"),
+            "flatpak_apps": _("Flatpak applications"),
+            "flatpak_data": _("Flatpak application data"),
+            "prepare_apps": _("Preparing the selected Flatpak components…"),
+        }
+
+    def _restore_step(self, stage, state="running", detail=""):
+        label = self._restore_labels().get(stage)
+        if label:
+            if state == "running":
+                self.status_page.set_description(f"{label} · {detail}" if detail else label)
+            if stage != "prepare_apps":
+                self.restore_states[stage] = state
+        return False
+
+    def _call_archive_command(self, session=None):
+        def deliver(callback, *args):
+            if session is None or self.import_session is session:
+                callback(*args)
+            return False
+
         command = [sys.executable, "-m", "savedesktop.core.archive", self.archive_mode, self.archive_name]
         options = None
         if self.archive_mode == "--unpack":
             command.append("--restore-options-stdin")
             options = json.dumps(self.restore_options)
-        self.archive_proc = subprocess.Popen(
-            command, stdout=None, stderr=subprocess.PIPE,
+        proc = subprocess.Popen(
+            command, stdout=None if options is None else subprocess.DEVNULL, stderr=subprocess.PIPE,
             stdin=subprocess.PIPE if options is not None else None,
             text=True, env={**os.environ, "PYTHONPATH": f"{app_prefix}"},
         )
-        if self.import_cancelled and options is not None:
-            self._kill_process()
-        _, err = self.archive_proc.communicate(options)
+        if session is None or self.import_session is session:
+            self.archive_proc = proc
+        if session is not None and (self.import_session is not session or self.import_cancelled):
+            proc.terminate()
+        if options is None:
+            _, err = proc.communicate()
+        else:
+            lines = []
+            try:
+                with proc.stdin as stream:
+                    stream.write(options)
+            except BrokenPipeError:
+                pass
+            for line in proc.stderr:
+                if line.startswith(STEP):
+                    try:
+                        stage, state = json.loads(line[len(STEP):])
+                    except (TypeError, ValueError):
+                        lines.append(line)
+                    else:
+                        GLib.idle_add(deliver, self._restore_step, stage, state)
+                else:
+                    lines.append(line)
+            proc.stderr.close()
+            proc.wait()
+            err = "".join(lines)
+            if err:
+                GLib.idle_add(deliver, self._log_restore, err)
         if err:
             print(err, end="", file=sys.stderr)
-        status = self.archive_proc.returncode
+        status = proc.returncode
         message = err.strip() if status else operation_notices(err)
         completion = read_completion(err) if not status and options is not None else {}
-        GLib.idle_add(self._archive_finished, status, message, options is not None, completion)
+        GLib.idle_add(deliver, self._archive_finished, status, message, options is not None, completion)
 
     def _archive_finished(self, status, message, restoring, completion):
         if restoring and (self.import_session is None or self.import_restart_requested):
@@ -651,6 +798,7 @@ class MainWindow(Adw.ApplicationWindow):
                 self._finish_import_session()
             return
         if status == 0 and restoring:
+            self.cancel_button.set_sensitive(False)
             if completion.get("cinnamon_shell"):
                 session_type = os.environ.get("XDG_SESSION_TYPE", "").lower()
                 if session_type == "x11":
@@ -662,7 +810,8 @@ class MainWindow(Adw.ApplicationWindow):
             self._restore_done(message, completion, False)
             return
         if restoring:
-            self._finish_import_session()
+            self._restore_summary(completion, message, error=True)
+            return
         if status == 0:
             if message and not restoring:
                 self.done_title = _("Backup created with warnings")
@@ -675,31 +824,114 @@ class MainWindow(Adw.ApplicationWindow):
             self.show_err_msg(message)
 
     def _restore_done(self, message, completion, restart_requested):
-        self._finish_import_session()
-        details = []
-        self.flatpaks_pending = bool(completion.get("flatpaks_pending"))
-        self.session_restore_pending = bool(completion.get("nemo_pending") or self.flatpaks_pending)
-        needs_sign_in = completion.get("cinnamon_shell") and not restart_requested
-        if needs_sign_in:
-            self.done_title = _("Restore finished. Sign in again to apply the remaining changes.")
-        else:
-            self.done_title = _("Restore finished.")
-        if restart_requested:
-            details.append(_("Cinnamon restart requested. Open applications stay in the current session."))
-        elif completion.get("cinnamon_shell"):
-            details.append(_("Sign out and sign in again to reload Cinnamon."))
-        if self.session_restore_pending:
-            details.append(_("Continue the remaining restoration in this session using the button below."))
+        completion["shell_deferred"] = completion.get("cinnamon_shell") and not restart_requested
         if completion.get("nemo_pending"):
-            details.append(_("If you defer the Nemo desktop layout, it will be applied at the next sign-in."))
-        if not environment or environment["de_name"] != "Cinnamon":
-            details.append(_("Some desktop settings may require signing in again."))
-        if message:
-            details.append(_("The restore completed with warnings."))
-        self.done_desc = "\n".join(details)
-        self.done()
-        if message:
-            self._show_restore_notice(message, restoring=True)
+            self.restore_states["desktop_layout"] = "pending"
+        if completion.get("flatpaks_pending"):
+            for key in ("flatpak_apps", "flatpak_data"):
+                if self.restore_options.get(key):
+                    self.restore_states[key] = "pending"
+        if not (completion.get("nemo_pending") or completion.get("flatpaks_pending")):
+            self._restore_summary(completion, message)
+            return
+        if self.host_skip:
+            completion["helper_unavailable"] = True
+            self._restore_summary(completion, message)
+            return
+
+        self.status_page.set_description(_("Waiting for the host confirmation…"))
+        self.cancel_button.set_sensitive(False)
+        service = APP_ID + ".RestoreHost"
+        path = "/" + service.replace(".", "/")
+        job = self.restore_options["job"]
+
+        def progress(_bus, _sender, _path, _iface, _signal, params, *_data):
+            active_job, stage, detail = params.unpack()
+            if active_job != job:
+                return
+            if stage == "log":
+                self._log_restore(detail)
+            elif stage.endswith("_result"):
+                self._restore_step(stage.removesuffix("_result"), detail)
+            else:
+                self._restore_step(stage, detail=detail)
+
+        def finished(bus, result):
+            bus.signal_unsubscribe(subscription)
+            try:
+                nemo, apps = bus.call_finish(result).unpack()
+            except GLib.Error as error:
+                self._log_restore(str(error))
+                completion["helper_unavailable"] = True
+            else:
+                if nemo != "none":
+                    self.restore_states["desktop_layout"] = nemo
+                if apps != "none":
+                    for key in ("flatpak_apps", "flatpak_data"):
+                        if self.restore_states.get(key) in ("pending", "running"):
+                            self.restore_states[key] = apps
+            self._restore_summary(completion, message)
+
+        try:
+            bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+        except GLib.Error as error:
+            self._log_restore(str(error))
+            completion["helper_unavailable"] = True
+            self._restore_summary(completion, message)
+            return
+        subscription = bus.signal_subscribe(service, service, "Progress", path, job,
+                                            Gio.DBusSignalFlags.NONE, progress)
+        bus.call(service, path, service, "StartRestore",
+                 GLib.Variant("(sbb)", (job, bool(completion.get("nemo_pending")),
+                                       bool(completion.get("flatpaks_pending")))),
+                 GLib.VariantType.new("(ss)"), Gio.DBusCallFlags.NONE, 2 ** 31 - 1, None, finished)
+
+    def _restore_summary(self, completion, message, *, error=False):
+        self._finish_import_session()
+        status_text = {
+            "done": _("restored"),
+            "pending": _("waiting for the next sign-in"),
+            "deferred": _("waiting for the next sign-in"),
+            "failed": _("could not be restored"),
+            "partial": _("partially restored"),
+            "running": _("could not be completed"),
+        }
+        if error:
+            for key, selected in self.restore_options.items():
+                if key in ("system_settings", "wallpaper", "desktop_contents", "desktop_configuration", "folders",
+                           "flatpak_apps", "flatpak_data") and selected:
+                    name = {"system_settings": "settings", "desktop_contents": "desktop_files", "desktop_configuration": "desktop_layout"}.get(key, key)
+                    self.restore_states.setdefault(name, "failed")
+        labels = self._restore_labels()
+        lines = [f"{labels[key]} — {status_text[state]}" for key, state in self.restore_states.items()]
+        if completion.get("helper_unavailable"):
+            lines.append(_("The restore helper was unavailable. Pending components can be applied at the next sign-in."))
+        if completion.get("shell_deferred"):
+            lines.append(_("Sign out and sign in again to reload Cinnamon."))
+        if self.restore_states.get("desktop_layout") == "deferred":
+            lines.append(_("The desktop layout remains queued for the next sign-in."))
+        if any(self.restore_states.get(key) == "partial" for key in ("flatpak_apps", "flatpak_data")):
+            lines.append(_("Review the log. Close affected apps before retrying, and check availability of the installation sources."))
+        if message and not error:
+            lines.append(message)
+        if error:
+            lines.append(_("The operation stopped. See the diagnostic log for details."))
+        elif not completion.get("shell_deferred") and all(state == "done" for state in self.restore_states.values()):
+            lines.append(_("A computer restart is not required."))
+        self.spinner.stop()
+        self.status_box.remove(self.spinner)
+        self.status_box.remove(self.cancel_button)
+        title = _("Restore stopped") if error else _("Restore completed")
+        if not error and (message or completion.get("shell_deferred") or
+                          any(state != "done" for state in self.restore_states.values())):
+            title = _("Restore completed with pending changes or warnings")
+        self.set_title(title)
+        self.status_page.set_title(title)
+        self.status_page.set_description("\n".join(lines))
+        self.status_page.set_icon_name("dialog-warning-symbolic" if error or title != _("Restore completed") else "done")
+        close = Gtk.Button(label=_("Close"), halign=Gtk.Align.CENTER, css_classes=["pill", "suggested-action"])
+        close.connect("clicked", lambda _: self._set_default_widgets_state())
+        self.status_page.set_child(close)
 
     def _show_restore_notice(self, message, restoring):
         heading = _("Backup notice") if restoring else _("Backup created with warnings")
@@ -748,6 +980,8 @@ class MainWindow(Adw.ApplicationWindow):
     def _cancel(self, w):
         if self.import_session is not None:
             self.import_cancelled = True
+            if getattr(self, "archive_proc", None) is None:
+                self._finish_import_session()
         self._kill_process()
         self._set_default_widgets_state()
         for widget in [self.spinner, self.cancel_button, self.status_page]:
@@ -755,7 +989,7 @@ class MainWindow(Adw.ApplicationWindow):
 
     # Kill a process for saving/importing configuration
     def _kill_process(self):
-        if hasattr(self, "archive_proc") and self.archive_proc.poll() is None:
+        if getattr(self, "archive_proc", None) is not None and self.archive_proc.poll() is None:
             self.archive_proc.terminate()
             print("The process was stopped.")
 
@@ -807,64 +1041,12 @@ class MainWindow(Adw.ApplicationWindow):
             self.open_folder_button.set_valign(Gtk.Align.CENTER)
             self.open_folder_button.set_halign(Gtk.Align.CENTER)
             self.buttons_box.append(self.open_folder_button)
-        elif self.archive_mode == "--unpack":
-            if getattr(self, "session_restore_pending", False):
-                apply_here = Gtk.Button(label=_("Apply in this session"), css_classes=["pill", "suggested-action"])
-                apply_here.set_halign(Gtk.Align.CENTER)
-                apply_here.connect("clicked", self._review_pending_restore)
-                self.buttons_box.append(apply_here)
-            if getattr(self, "flatpaks_pending", False):
-                button = Gtk.Button(label=_("Copy Flatpak restore command"), css_classes=["pill"])
-                button.set_halign(Gtk.Align.CENTER)
-                helper = quote(str(Path(CACHE) / "workspace" / "flatpaks_installer.py"))
-                command = f"/usr/bin/python3 -u {helper} --show-progress"
-                button.connect("clicked", lambda widget: widget.get_clipboard().set(command))
-                self.buttons_box.append(button)
-            self.logout_button = Gtk.Button.new_with_label(_("Log Out"))
-            self.logout_button.add_css_class('pill')
-            self.logout_button.add_css_class('suggested-action')
-            self.logout_button.set_halign(Gtk.Align.CENTER)
-            self.logout_button.set_valign(Gtk.Align.CENTER)
-            self.logout_button.set_action_name("app.logout")
-            if not (flatpak and self.environment == "Hyprland"):
-                self.buttons_box.append(self.logout_button)
-
-    def _review_pending_restore(self, button):
-        service = APP_ID + ".RestoreHost"
-        button.set_sensitive(False)
-
-        def finished(connection, result):
-            button.set_sensitive(True)
-            try:
-                connection.call_finish(result)
-            except GLib.Error as error:
-                print(f"Restore service: {error}", file=sys.stderr)
-                self._show_restore_service_setup()
-
-        try:
-            connection = Gio.bus_get_sync(Gio.BusType.SESSION, None)
-        except GLib.Error as error:
-            print(f"Restore service: {error}", file=sys.stderr)
-            button.set_sensitive(True)
-            self._show_restore_service_setup()
-            return
-        connection.call(service, "/" + service.replace(".", "/"), service, "ReviewPendingRestore",
-                        None, None, Gio.DBusCallFlags.NONE, 5000, None, finished)
-
-    def _show_restore_service_setup(self):
-        notice = Adw.AlertDialog.new(
-            _("Set up current-session restoration"),
-            _("For first-time setup, open “SaveDesktop Plus — Apply pending restore” from your system menu."),
-        )
-        notice.add_response("close", _("Close"))
-        notice.present(self)
-
     def _back_to_main(self, w):
         self._set_default_widgets_state()
         if self.archive_mode == "--create":
             widgets = [self.status_page, self.open_folder_button, self.back_button]
         else:
-            widgets = [self.status_page, self.logout_button, self.back_button]
+            widgets = [self.status_page, self.back_button]
         for widget in widgets:
             self.status_box.remove(widget)
 

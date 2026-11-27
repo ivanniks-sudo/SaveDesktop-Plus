@@ -872,3 +872,90 @@ msgstr "Удалить службу восстановления"
 
 msgid "The current-session restore service was removed."
 msgstr "Служба восстановления в текущем сеансе удалена."
+
+msgid "Before restoring, finish all copy and move operations."
+msgstr "Перед восстановлением завершите все операции копирования и перемещения файлов."
+
+msgid "Close apps whose data will be restored and keep them closed until the restore finishes."
+msgstr "Закройте приложения, данные которых будут восстановлены, и не запускайте их до завершения восстановления."
+
+msgid "Flatpak apps absent from the backup may be uninstalled."
+msgstr "Приложения Flatpak, которых нет в резервной копии, могут быть удалены."
+
+msgid "Apply the selected changes in this session?"
+msgstr "Применить выбранные изменения в текущем сеансе?"
+
+msgid "At next sign-in"
+msgstr "При следующем входе"
+
+msgid "The restore helper could not be set up."
+msgstr "Не удалось настроить помощник восстановления."
+
+msgid "Restoring backup"
+msgstr "Восстановление резервной копии"
+
+msgid "Preparing the selected components…"
+msgstr "Подготавливаются выбранные компоненты…"
+
+msgid "Open “SaveDesktop Plus — Set up restoration” from the system menu. Restoration will continue automatically after this one-time setup or update."
+msgstr "Откройте «SaveDesktop Plus — Настроить восстановление» в системном меню. После однократной настройки или обновления восстановление продолжится автоматически."
+
+msgid "Continue without the helper"
+msgstr "Продолжить без помощника"
+
+msgid "Diagnostic log"
+msgstr "Журнал диагностики"
+
+msgid "System settings"
+msgstr "Настройки системы"
+
+msgid "Flatpak applications"
+msgstr "Приложения Flatpak"
+
+msgid "Flatpak application data"
+msgstr "Данные приложений Flatpak"
+
+msgid "Preparing the selected Flatpak components…"
+msgstr "Подготавливаются выбранные компоненты Flatpak…"
+
+msgid "Waiting for the host confirmation…"
+msgstr "Ожидание подтверждения в системном окне…"
+
+msgid "restored"
+msgstr "восстановлено"
+
+msgid "waiting for the next sign-in"
+msgstr "ожидает следующего входа"
+
+msgid "could not be restored"
+msgstr "не удалось восстановить"
+
+msgid "partially restored"
+msgstr "восстановлено частично"
+
+msgid "could not be completed"
+msgstr "не удалось завершить"
+
+msgid "The restore helper was unavailable. Pending components can be applied at the next sign-in."
+msgstr "Помощник восстановления недоступен. Ожидающие компоненты можно применить при следующем входе."
+
+msgid "The desktop layout remains queued for the next sign-in."
+msgstr "Конфигурация рабочего стола будет применена при следующем входе."
+
+msgid "Review the log. Close affected apps before retrying, and check availability of the installation sources."
+msgstr "Проверьте журнал. Перед повторной попыткой закройте затронутые приложения и проверьте доступность источников установки."
+
+msgid "The operation stopped. See the diagnostic log for details."
+msgstr "Операция остановлена. Подробности доступны в журнале диагностики."
+
+msgid "A computer restart is not required."
+msgstr "Перезагрузка компьютера не требуется."
+
+msgid "Restore stopped"
+msgstr "Восстановление остановлено"
+
+msgid "Restore completed"
+msgstr "Восстановление завершено"
+
+msgid "Restore completed with pending changes or warnings"
+msgstr "Восстановление завершено с отложенными изменениями или предупреждениями"

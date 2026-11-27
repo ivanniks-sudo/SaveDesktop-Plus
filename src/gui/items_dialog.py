@@ -28,6 +28,13 @@ class itemsDialog(Adw.AlertDialog):
         self.itemsBox.get_style_context().add_class(class_name='boxed-list')
         self.set_extra_child(self.itemsBox)
         
+        if self.restoring:
+            self.system_settings = Gtk.CheckButton(active=True, valign=Gtk.Align.CENTER)
+            row = Adw.ActionRow(title=_("System settings"))
+            row.add_suffix(self.system_settings)
+            row.set_activatable_widget(self.system_settings)
+            self.itemsBox.append(row)
+
         # Switch and row of option 'Save icons'
         self.switch_01 = Gtk.Switch.new()
         if settings["save-icons"]:
@@ -152,7 +159,8 @@ class itemsDialog(Adw.AlertDialog):
         self.custom_row = Adw.ActionRow.new()
         self.custom_row.set_title(_("Custom folders"))
         self.custom_row.add_suffix(self.custom_switch)
-        if self.custom_switch.get_active() and not self.restoring:
+        if (self.restoring and self.should_show("Custom_Dirs/") or
+                self.custom_switch.get_active() and not self.restoring):
             self.custom_row.add_suffix(self.custom_button)
         if self.should_show("Custom_Dirs"):
             self.itemsBox.append(child=self.custom_row)
@@ -160,7 +168,7 @@ class itemsDialog(Adw.AlertDialog):
         if not self.restoring:
             self.custom_switch.connect('notify::active', self._set_show_custom_button)
 
-        if flatpak and self.should_show("installed_flatpaks.sh"):
+        if flatpak and self.should_show("installed_flatpaks.sh", "installed_user_flatpaks.sh", "flatpak-apps-data.tgz", "app/"):
             self.flatpak_row = Adw.ExpanderRow.new()
             self.flatpak_row.set_title(title=_("Flatpak apps"))
             self.flatpak_row.set_subtitle(f"<a href='https://vikdevelop.github.io/SaveDesktop/wiki/flatpak_apps/{language}'>{_('Learn more')}</a>")
@@ -171,7 +179,7 @@ class itemsDialog(Adw.AlertDialog):
             
             # If it's available only one folder in the dir below, the row will not be displayed
             path = Path(f"{home}/.var/app")
-            folders_dict = {f.name: str(f) for f in path.iterdir() if f.is_dir()}
+            folders_dict = {f.name: str(f) for f in path.iterdir() if f.is_dir()} if path.is_dir() else {}
 
             if len(folders_dict) > 1:
                 self.appsButton = Gtk.Button.new_from_icon_name("go-next-symbolic")
@@ -226,20 +234,38 @@ class itemsDialog(Adw.AlertDialog):
             self.remove_row.set_activatable_widget(self.switch_07)
             self.flatpak_row.add_row(child=self.remove_row)
 
-            if not self.switch_05.get_active():
-                self.switch_06.set_sensitive(False)
-                self.switch_06.set_active(False)
-                self.switch_07.set_sensitive(False)
-                self.switch_07.set_active(True)
-                settings["save-flatpak-data"] = False
-                settings["keep-flatpaks"] = True
-
+            if self.restoring:
+                has_list = self.should_show("installed_flatpaks.sh", "installed_user_flatpaks.sh")
+                has_data = self.should_show("flatpak-apps-data.tgz", "app/")
+                self.switch_05.set_sensitive(has_list)
+                self.switch_06.set_sensitive(has_data)
+                if not has_list:
+                    self.switch_05.set_active(False)
+                if not has_data:
+                    self.switch_06.set_active(False)
+            self._set_sw05_sensitivity(None, None)
             self.switch_05.connect('notify::active', self._set_sw05_sensitivity)
         
+        if self.restoring:
+            for attribute in ("desktop_configuration", "switch_05", "switch_06", "switch_07"):
+                widget = getattr(self, attribute, None)
+                if widget:
+                    widget.connect("notify::active", self._update_restore_warnings)
+            self._update_restore_warnings()
         self.add_response('cancel', _("Cancel"))
         self.add_response('ok', _("Apply"))
         self.set_response_appearance('ok', Adw.ResponseAppearance.SUGGESTED)
         self.connect('response', self.itemsdialog_closed)
+
+    def _update_restore_warnings(self, *_args):
+        messages = [_("Choose the components to restore from this backup.")]
+        if hasattr(self, "desktop_configuration") and self.desktop_configuration.get_active():
+            messages.append(_("Before restoring, finish all copy and move operations."))
+        if hasattr(self, "switch_06") and self.switch_06.get_active():
+            messages.append(_("Close apps whose data will be restored and keep them closed until the restore finishes."))
+        if hasattr(self, "switch_05") and self.switch_05.get_active() and not self.switch_07.get_active():
+            messages.append(_("Flatpak apps absent from the backup may be uninstalled."))
+        self.set_body("\n\n".join(messages))
 
     def should_show(self, *search_terms):
         if not self.items_list:
@@ -260,12 +286,14 @@ class itemsDialog(Adw.AlertDialog):
 
     def _set_sw05_sensitivity(self, GParamBoolean, switch_05):
         if not self.switch_05.get_active():
-            self.switch_06.set_sensitive(False)
-            self.switch_06.set_active(False)
+            if not self.restoring:
+                self.switch_06.set_sensitive(False)
+                self.switch_06.set_active(False)
             self.switch_07.set_sensitive(False)
             self.switch_07.set_active(True)
         else:
-            self.switch_06.set_sensitive(True)
+            if not self.restoring:
+                self.switch_06.set_sensitive(True)
             self.switch_07.set_sensitive(True)
 
     def _show_custom_dirs_dialog(self, w):
