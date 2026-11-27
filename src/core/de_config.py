@@ -3,6 +3,7 @@ from gi.repository import GLib
 from savedesktop.globals import *
 from savedesktop.core.custom_dirs import enabled_folders, original_path, save_custom_folders, read_folder_metadata, validate_folder_plan
 from savedesktop.core.backup_input import publish_directory, restore_file, restore_tar, restore_tree
+from savedesktop.core.restore_completion import affects_cinnamon_shell
 from savedesktop.core.wallpaper import save_wallpaper, restore_wallpaper
 from savedesktop.core.desktop_configuration import NEMO_FILE, save_desktop_configuration, queue_desktop_configuration
 from pathlib import Path
@@ -129,6 +130,7 @@ def create_flatpak_autostart(root):
             )
 
     print("[OK] Created Flatpak autostart")
+    return True
 
 def save_bookmarks():
     safe_copytree(f"{home}/.config/gtk-4.0", "General/gtk-4.0")
@@ -390,6 +392,9 @@ class Import:
         restore_background = options.get("wallpaper", settings["save-backgrounds"])
         restore_contents = options.get("desktop_contents", settings["save-desktop-folder"])
         restore_configuration = options.get("desktop_configuration", True)
+        self.cinnamon_shell = cinnamon and affects_cinnamon_shell(dump)
+        self.nemo_pending = False
+        self.flatpaks_pending = False
         protected = []
         if not restore_contents and desktop_dir != home:
             protected.append(desktop_dir)
@@ -408,7 +413,10 @@ class Import:
             enabled = restore_background if name == "backgrounds" else settings[item["key"]]
             if enabled:
                 for src, dst in item["dirs"]:
-                    restore_optional(general / dst, src)
+                    source = general / dst
+                    if cinnamon and name in ("themes", "extensions") and source.is_dir():
+                        self.cinnamon_shell = True
+                    restore_optional(source, src)
 
         for name, item in SPECIAL_ITEMS.items():
             if name in ("flatpaks", "flatpak-data"):
@@ -418,6 +426,11 @@ class Import:
                 item["import"](general)
         for source, destination in plan.items():
             restore_tree(root / source, Path(destination))
+            location = host_destinations[source]
+            spices = home / ".config/cinnamon/spices"
+            if cinnamon and location and (Path(location).is_relative_to(spices) or
+                                           spices.is_relative_to(location)):
+                self.cinnamon_shell = True
             print(f"[OK] Restored custom folder: {destination}")
 
         # DE configuration
@@ -432,6 +445,8 @@ class Import:
                 for src, dst in environment["dirs"]:
                     source = root / "DE" / dst if (root / "DE").is_dir() else root / dst
                     excluded = (NEMO_FILE,) if cinnamon and dst == "nemo" else ()
+                    if cinnamon and dst in ("cinnamon", ".cinnamon") and source.is_dir():
+                        self.cinnamon_shell = True
                     restore_optional(source, src, exclude=excluded)
         else:
             print(f"[WARN] Unknown DE: {environment_key}")
@@ -441,14 +456,14 @@ class Import:
             if restored:
                 dump += "\n" + restored
         self.import_dconf(dump)
+        if settings["save-installed-flatpaks"] or settings["save-flatpak-data"]:
+            self.flatpaks_pending = bool(create_flatpak_autostart(root))
         if cinnamon and restore_configuration:
             from gi.repository import Gdk
             display = Gdk.Display.get_default() or Gdk.Display.open(None)
             geometries = [monitor.get_geometry() for monitor in display.get_monitors()] if display else []
             monitors = [(geometry.width, geometry.height) for geometry in geometries]
-            queue_desktop_configuration(root, home / ".config", APP_ID, monitors)
-        if settings["save-installed-flatpaks"] or settings["save-flatpak-data"]:
-            create_flatpak_autostart(root)
+            self.nemo_pending = queue_desktop_configuration(root, home / ".config", APP_ID, monitors)
 
     def import_dconf(self, dump):
         env = os.environ.copy()

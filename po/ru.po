@@ -767,3 +767,27 @@ msgstr "Расположение значков и параметры рабоч
 
 msgid "Some settings were skipped because they referenced temporary Document Portal paths."
 msgstr "Некоторые настройки пропущены, поскольку они ссылались на временные пути системного портала."
+
+msgid "Requesting a Cinnamon restart…"
+msgstr "Запрашивается перезапуск Cinnamon…"
+
+msgid "Restore finished. Sign in again to apply the remaining changes."
+msgstr "Восстановление завершено. Войдите снова, чтобы применить оставшиеся изменения."
+
+msgid "Restore finished."
+msgstr "Восстановление завершено."
+
+msgid "Cinnamon restart requested. Open applications stay in the current session."
+msgstr "Запрошен перезапуск Cinnamon. Открытые приложения остаются в текущем сеансе."
+
+msgid "Sign out and sign in again to reload Cinnamon."
+msgstr "Выйдите из сеанса и войдите снова, чтобы обновить Cinnamon."
+
+msgid "The selected Flatpak apps or data will be restored at the next sign-in."
+msgstr "Выбранные приложения Flatpak или их данные будут восстановлены при следующем входе."
+
+msgid "Some desktop settings may require signing in again."
+msgstr "Для применения некоторых настроек рабочего стола может потребоваться повторный вход."
+
+msgid "The restore completed with warnings."
+msgstr "Восстановление завершено с предупреждениями."

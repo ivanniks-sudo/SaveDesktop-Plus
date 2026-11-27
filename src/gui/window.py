@@ -14,6 +14,7 @@ from savedesktop.core.backup_input import prepare_backup
 from savedesktop.core.custom_dirs import read_folder_metadata
 from savedesktop.core.desktop_configuration import filter_desktop_settings
 from savedesktop.core.operation_notices import operation_notices
+from savedesktop.core.restore_completion import read_completion, restart_cinnamon
 from savedesktop.core.wallpaper import split_wallpaper
 from savedesktop.gui.synchronization_dialogs import InitSetupDialog, SetDialog, CloudDialog
 
@@ -366,6 +367,7 @@ class MainWindow(Adw.ApplicationWindow):
             return None
         self.import_session = object()
         self.import_cancelled = False
+        self.import_restart_requested = False
         self.stack.set_visible_child_name("importpage")
         return self.import_session
 
@@ -637,14 +639,29 @@ class MainWindow(Adw.ApplicationWindow):
             print(err, end="", file=sys.stderr)
         status = self.archive_proc.returncode
         message = err.strip() if status else operation_notices(err)
-        GLib.idle_add(self._archive_finished, status, message, options is not None)
+        completion = read_completion(err) if not status and options is not None else {}
+        GLib.idle_add(self._archive_finished, status, message, options is not None, completion)
 
-    def _archive_finished(self, status, message, restoring):
-        cancelled = restoring and self.import_cancelled
+    def _archive_finished(self, status, message, restoring, completion):
+        if restoring and (self.import_session is None or self.import_restart_requested):
+            return
+        if (restoring and self.import_cancelled) or status < 0 or status == 130:
+            if restoring:
+                self._finish_import_session()
+            return
+        if status == 0 and restoring:
+            if completion.get("cinnamon_shell"):
+                session_type = os.environ.get("XDG_SESSION_TYPE", "").lower()
+                if session_type == "x11":
+                    self.import_restart_requested = True
+                    self.status_page.set_description(_("Requesting a Cinnamon restart…"))
+                    self.cancel_button.set_sensitive(False)
+                    restart_cinnamon(session_type, lambda accepted: self._restore_done(message, completion, accepted))
+                    return
+            self._restore_done(message, completion, False)
+            return
         if restoring:
             self._finish_import_session()
-        if cancelled or status < 0 or status == 130:
-            return
         if status == 0:
             if message and not restoring:
                 self.done_title = _("Backup created with warnings")
@@ -655,6 +672,33 @@ class MainWindow(Adw.ApplicationWindow):
         else:
             self._set_default_widgets_state()
             self.show_err_msg(message)
+
+    def _restore_done(self, message, completion, restart_requested):
+        self._finish_import_session()
+        details = []
+        needs_sign_in = completion.get("nemo_pending") or completion.get("flatpaks_pending") or (
+            completion.get("cinnamon_shell") and not restart_requested
+        )
+        if needs_sign_in:
+            self.done_title = _("Restore finished. Sign in again to apply the remaining changes.")
+        else:
+            self.done_title = _("Restore finished.")
+        if restart_requested:
+            details.append(_("Cinnamon restart requested. Open applications stay in the current session."))
+        elif completion.get("cinnamon_shell"):
+            details.append(_("Sign out and sign in again to reload Cinnamon."))
+        if completion.get("nemo_pending"):
+            details.append(_("Nemo desktop layout will be applied the next time you sign in to Cinnamon."))
+        if completion.get("flatpaks_pending"):
+            details.append(_("The selected Flatpak apps or data will be restored at the next sign-in."))
+        if not environment or environment["de_name"] != "Cinnamon":
+            details.append(_("Some desktop settings may require signing in again."))
+        if message:
+            details.append(_("The restore completed with warnings."))
+        self.done_desc = "\n".join(details)
+        self.done()
+        if message:
+            self._show_restore_notice(message, restoring=True)
 
     def _show_restore_notice(self, message, restoring):
         heading = _("Backup notice") if restoring else _("Backup created with warnings")

@@ -7,6 +7,7 @@ from savedesktop.core.de_config import Save, Import
 from savedesktop.core.backup_input import HOME_PATH, ZipPath, prepare_backup, publish_directory
 from savedesktop.core.wallpaper import split_wallpaper
 from savedesktop.core.operation_notices import warn
+from savedesktop.core.restore_completion import report_completion
 from savedesktop.core.desktop_configuration import filter_desktop_settings
 
 _ = translation("savedesktop", localedir=os.getenv("SAVEDESKTOP_LOCALE"), fallback=True).gettext
@@ -96,9 +97,14 @@ class Unpack:
                     root.backup.home = home
                 else:
                     self._replace_home_in_files(root, home)
-                Import(root, options, dump, wallpaper)
+                restore = Import(root, options, dump, wallpaper)
         finally:
             remove_temp_file()
+        report_completion({
+            "cinnamon_shell": restore.cinnamon_shell,
+            "nemo_pending": restore.nemo_pending,
+            "flatpaks_pending": restore.flatpaks_pending,
+        })
         print("Configuration imported successfully.")
 
     def _sanitize_dconf_dump(self, dump):
