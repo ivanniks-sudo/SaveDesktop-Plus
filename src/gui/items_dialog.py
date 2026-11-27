@@ -247,6 +247,13 @@ class itemsDialog(Adw.AlertDialog):
             self.switch_05.connect('notify::active', self._set_sw05_sensitivity)
         
         if self.restoring:
+            def system_options_changed(*_args):
+                for name in ("icons_row", "themes_row", "fonts_row", "gtk_row", "ext_row"):
+                    option = getattr(self, name, None)
+                    if option is not None:
+                        option.set_sensitive(self.system_settings.get_active())
+
+            self.system_settings.connect("notify::active", system_options_changed)
             for attribute in ("desktop_configuration", "switch_05", "switch_06", "switch_07"):
                 widget = getattr(self, attribute, None)
                 if widget:

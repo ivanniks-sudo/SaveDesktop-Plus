@@ -488,7 +488,8 @@ class Import:
 
         if plan:
             report_step("folders", "done")
-        report_step("settings")
+        if restore_system:
+            report_step("settings")
         # DE configuration
         if restore_system and environment:
             if environment["de_name"] == "KDE Plasma":

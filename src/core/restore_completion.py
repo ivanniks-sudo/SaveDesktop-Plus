@@ -3,6 +3,7 @@ import json
 import sys
 
 HOST_PROTOCOL = 2
+HOST_BUILD = "4.1.0~preview.9"
 STEP = "SDPLUS-STEP "
 PREFIX = "SDPLUS-RESTORE "
 LIVE_DESKTOP_SECTIONS = ("org/cinnamon/desktop/background", "org/cinnamon/desktop/screensaver")

@@ -959,3 +959,6 @@ msgstr "Восстановление завершено"
 
 msgid "Restore completed with pending changes or warnings"
 msgstr "Восстановление завершено с отложенными изменениями или предупреждениями"
+
+msgid "Some settings or files were skipped. See the diagnostic log for details."
+msgstr "Некоторые настройки или файлы пропущены. Подробности доступны в журнале диагностики."

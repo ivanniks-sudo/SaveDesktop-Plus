@@ -15,7 +15,7 @@ from savedesktop.core.backup_input import prepare_backup
 from savedesktop.core.custom_dirs import read_folder_metadata
 from savedesktop.core.desktop_configuration import filter_desktop_settings
 from savedesktop.core.operation_notices import operation_notices
-from savedesktop.core.restore_completion import HOST_PROTOCOL, STEP, read_completion, restart_cinnamon
+from savedesktop.core.restore_completion import HOST_BUILD, HOST_PROTOCOL, STEP, read_completion, restart_cinnamon
 from savedesktop.core.de_config import prepare_session_launcher
 from savedesktop.core.wallpaper import split_wallpaper
 from savedesktop.gui.synchronization_dialogs import InitSetupDialog, SetDialog, CloudDialog
@@ -678,13 +678,13 @@ class MainWindow(Adw.ApplicationWindow):
             if self.import_session is not session or self.host_skip or self.import_cancelled:
                 return
             try:
-                version, = connection.call_finish(result).unpack()
+                protocol, version = connection.call_finish(result).unpack()
             except GLib.Error as error:
                 if not preparing:
                     self._log_restore(str(error))
                 unavailable()
                 return
-            if version != HOST_PROTOCOL:
+            if (protocol, version) != (HOST_PROTOCOL, HOST_BUILD):
                 unavailable()
                 return
             if not self.restore_host_ready:
@@ -698,7 +698,7 @@ class MainWindow(Adw.ApplicationWindow):
             unavailable()
             return
         bus.call(service, "/" + service.replace(".", "/"), service, "GetProtocol",
-                 None, GLib.VariantType.new("(u)"), Gio.DBusCallFlags.NONE, 3000, None, finished)
+                 None, GLib.VariantType.new("(us)"), Gio.DBusCallFlags.NONE, 3000, None, finished)
 
     def _add_restore_log(self):
         self.restore_host_ready = False
@@ -751,7 +751,8 @@ class MainWindow(Adw.ApplicationWindow):
             command.append("--restore-options-stdin")
             options = json.dumps(self.restore_options)
         proc = subprocess.Popen(
-            command, stdout=None if options is None else subprocess.DEVNULL, stderr=subprocess.PIPE,
+            command, stdout=None if options is None else subprocess.PIPE,
+            stderr=subprocess.PIPE if options is None else subprocess.STDOUT,
             stdin=subprocess.PIPE if options is not None else None,
             text=True, env={**os.environ, "PYTHONPATH": f"{app_prefix}"},
         )
@@ -768,7 +769,7 @@ class MainWindow(Adw.ApplicationWindow):
                     stream.write(options)
             except BrokenPipeError:
                 pass
-            for line in proc.stderr:
+            for line in proc.stdout:
                 if line.startswith(STEP):
                     try:
                         stage, state = json.loads(line[len(STEP):])
@@ -778,7 +779,7 @@ class MainWindow(Adw.ApplicationWindow):
                         GLib.idle_add(deliver, self._restore_step, stage, state)
                 else:
                     lines.append(line)
-            proc.stderr.close()
+            proc.stdout.close()
             proc.wait()
             err = "".join(lines)
             if err:
@@ -913,7 +914,7 @@ class MainWindow(Adw.ApplicationWindow):
         if any(self.restore_states.get(key) == "partial" for key in ("flatpak_apps", "flatpak_data")):
             lines.append(_("Review the log. Close affected apps before retrying, and check availability of the installation sources."))
         if message and not error:
-            lines.append(message)
+            lines.append(_("Some settings or files were skipped. See the diagnostic log for details."))
         if error:
             lines.append(_("The operation stopped. See the diagnostic log for details."))
         elif not completion.get("shell_deferred") and all(state == "done" for state in self.restore_states.values()):

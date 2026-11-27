@@ -25,6 +25,7 @@ STATE = HOME / ".config" / APP_ID
 SERVICE = APP_ID + ".RestoreHost"
 OBJECT = "/" + SERVICE.replace(".", "/")
 PROTOCOL = 2
+BUILD = "4.1.0~preview.9"
 _ = translation("savedesktop", localedir=ROOT / "locale", fallback=True).gettext
 
 
@@ -281,6 +282,8 @@ def run_confirmed(job, nemo, flatpaks, confirm, event, protected):
         if flatpaks:
             log = io.StringIO()
             try:
+                if read_request(prefs_path) != prefs:
+                    raise ValueError("The Flatpak restore request has changed")
                 with redirect_stdout(log):
                     result = restore(snapshot, HOME, event)
                 if read_request(prefs_path) != prefs:
@@ -314,7 +317,7 @@ def confirm_restore(nemo, prefs):
 
 def serve():
     xml = f"""<node><interface name="{SERVICE}">
-      <method name="GetProtocol"><arg type="u" direction="out"/></method>
+      <method name="GetProtocol"><arg type="u" direction="out"/><arg type="s" direction="out"/></method>
       <method name="StartRestore">
         <arg type="s" direction="in"/><arg type="b" direction="in"/><arg type="b" direction="in"/>
         <arg type="s" direction="out"/><arg type="s" direction="out"/>
@@ -328,7 +331,7 @@ def serve():
     def request(connection, sender, path, iface, method, args, invocation):
         nonlocal busy
         if method == "GetProtocol":
-            invocation.return_value(GLib.Variant("(u)", (PROTOCOL,)))
+            invocation.return_value(GLib.Variant("(us)", (PROTOCOL, BUILD)))
             return
         if busy:
             invocation.return_dbus_error(SERVICE + ".Busy", "A restore is already running")
