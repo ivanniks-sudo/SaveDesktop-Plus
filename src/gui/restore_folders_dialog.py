@@ -1,9 +1,10 @@
 import os
+import sys
 from pathlib import Path
 
 from gi.repository import Adw, Gio, Gtk, GLib, Pango
 
-from savedesktop.core.custom_dirs import check_destination, destination_from_grant, folder_destination, original_path, validate_folder_plan
+from savedesktop.core.custom_dirs import DestinationAccessError, check_destination, destination_from_grant, folder_destination, original_path, validate_folder_plan
 from savedesktop.globals import flatpak, home
 
 
@@ -73,18 +74,33 @@ class RestoreFoldersDialog(Adw.AlertDialog):
         try:
             path = check_destination(record["grant"] or text, probe_portal=probe_portal)
         except ValueError as error:
-            record["error"] = str(error)
+            record["error"] = self._destination_error(error, text)
             record["status"].set_text(record["error"])
             return False
         record["error"] = None
         record["status"].set_text("" if path.exists() else _("This folder will be created."))
         return True
 
+    def _initial_folder(self, path):
+        target = Path(path)
+        if not target.is_absolute() or ".." in target.parts:
+            return None
+        return next((folder for folder in (target, *target.parents)
+                     if folder != Path("/") and os.path.isdir(folder)), None)
+
+    def _destination_error(self, error, path):
+        if not flatpak or not isinstance(error, DestinationAccessError):
+            return str(error)
+        print(f"Custom folder destination: {error}", file=sys.stderr)
+        if self._initial_folder(path):
+            return _("To restore this folder, grant access. Click the folder icon on the right, then click Select in the window that opens.")
+        return _("To restore this folder, grant access. Click the folder icon and select the destination folder or its nearest existing parent.")
+
     def _choose(self, button, record):
         chooser = Gtk.FileDialog(title=_("Choose folder"), modal=True)
         path = os.path.expanduser(record["entry"].get_text())
-        if Path(path).is_absolute():
-            initial = Path(path) if os.path.isdir(path) else Path(path).parent
+        initial = self._initial_folder(path)
+        if initial:
             chooser.set_initial_folder(Gio.File.new_for_path(str(initial)))
 
         def chosen(source, result, _data):
@@ -130,7 +146,7 @@ class RestoreFoldersDialog(Adw.AlertDialog):
                 plan = validate_folder_plan(self.folders, self._plan(), probe_portal=True)
             except ValueError as error:
                 self.finished(None)
-                notice = Adw.AlertDialog.new(_("An error occurred"), str(error))
+                notice = Adw.AlertDialog.new(_("An error occurred"), self._destination_error(error, ""))
                 notice.add_response("close", _("Close"))
                 notice.present(self.parent)
             else:

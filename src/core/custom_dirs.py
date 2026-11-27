@@ -200,6 +200,10 @@ def is_persistent_destination(path):
     return selected_mount != Path("/tmp") and filesystem not in (None, "tmpfs", "ramfs")
 
 
+class DestinationAccessError(ValueError):
+    pass
+
+
 def check_destination(value, *, probe_portal=False):
     path = Path(value)
     if not path.is_absolute() or not path.name or ".." in path.parts:
@@ -216,7 +220,7 @@ def check_destination(value, *, probe_portal=False):
             if not stat.S_ISDIR(info.st_mode):
                 raise ValueError(_("Destination is not a directory: {path}").format(path=ancestor))
             if not is_persistent_destination(ancestor):
-                raise ValueError(
+                raise DestinationAccessError(
                     _("The sandbox cannot save to the host at {path}. "
                       "Use the folder chooser to grant access to the destination or its parent.").format(path=ancestor)
                 )
@@ -228,10 +232,11 @@ def check_destination(value, *, probe_portal=False):
                 with tempfile.TemporaryDirectory(prefix=".sdplus-write-", dir=ancestor):
                     pass
             elif not granted and not os.access(ancestor, os.W_OK | os.X_OK):
-                raise ValueError(_("Destination is not writable: {path}").format(path=ancestor))
+                raise DestinationAccessError(_("Destination is not writable: {path}").format(path=ancestor))
             return path
     except (OSError, RuntimeError) as error:
-        raise ValueError(_("Cannot access destination {path}: {reason}").format(path=value, reason=getattr(error, "strerror", None) or error)) from error
+        error_type = DestinationAccessError if isinstance(error, PermissionError) else ValueError
+        raise error_type(_("Cannot access destination {path}: {reason}").format(path=value, reason=getattr(error, "strerror", None) or error)) from error
     raise ValueError(_("Destination is not accessible."))
 
 

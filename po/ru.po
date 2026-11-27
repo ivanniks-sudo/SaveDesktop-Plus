@@ -791,3 +791,9 @@ msgstr "Для применения некоторых настроек рабо
 
 msgid "The restore completed with warnings."
 msgstr "Восстановление завершено с предупреждениями."
+
+msgid "To restore this folder, grant access. Click the folder icon on the right, then click Select in the window that opens."
+msgstr "Для восстановления этой папки необходимо предоставить доступ. Нажмите значок папки справа, а затем в открывшемся окне нажмите «Выбрать»."
+
+msgid "To restore this folder, grant access. Click the folder icon and select the destination folder or its nearest existing parent."
+msgstr "Для восстановления этой папки необходимо предоставить доступ. Нажмите значок папки и выберите папку назначения или ближайшую существующую папку, в которой она находится."
