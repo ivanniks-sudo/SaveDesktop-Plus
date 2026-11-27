@@ -815,3 +815,39 @@ msgstr "Восстановление Flatpak остановлено из-за о
 
 msgid "Pending Flatpak app or data: {app}"
 msgstr "Ожидает восстановления приложение Flatpak или его данные: {app}"
+
+msgid "To continue in this session, open “SaveDesktop Plus — Apply pending restore” from your system menu."
+msgstr "Чтобы продолжить в текущем сеансе, откройте «SaveDesktop Plus — Применить восстановление» в системном меню."
+
+msgid "If you defer the Nemo desktop layout, it will be applied at the next sign-in."
+msgstr "Если отложить применение конфигурации рабочего стола Nemo, она будет применена при следующем входе."
+
+msgid "Applying the settings restarts the desktop. Make sure all copy and move operations have finished."
+msgstr "Для применения настроек необходимо перезапустить рабочий стол. Убедитесь, что все операции копирования и перемещения файлов завершены."
+
+msgid "Apply now"
+msgstr "Применить сейчас"
+
+msgid "Apply at next sign-in"
+msgstr "Применить при следующем входе"
+
+msgid "Applying the Nemo desktop layout…"
+msgstr "Применяется конфигурация рабочего стола Nemo…"
+
+msgid "The Nemo desktop refresh could not be verified. Its layout remains queued for the next sign-in."
+msgstr "Не удалось подтвердить обновление рабочего стола Nemo. Конфигурация будет применена при следующем входе."
+
+msgid "The Nemo desktop layout was applied."
+msgstr "Конфигурация рабочего стола Nemo применена."
+
+msgid "There is no pending SaveDesktop Plus restore."
+msgstr "Нет ожидающих операций восстановления SaveDesktop Plus."
+
+msgid "Close the affected Flatpak apps and keep them closed while their data are being restored."
+msgstr "Закройте затронутые приложения Flatpak и не запускайте их до завершения восстановления данных."
+
+msgid "Restore Flatpak apps now"
+msgstr "Восстановить приложения Flatpak сейчас"
+
+msgid "Later"
+msgstr "Позже"

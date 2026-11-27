@@ -678,9 +678,7 @@ class MainWindow(Adw.ApplicationWindow):
         self._finish_import_session()
         details = []
         self.flatpaks_pending = bool(completion.get("flatpaks_pending"))
-        needs_sign_in = completion.get("nemo_pending") or (
-            completion.get("cinnamon_shell") and not restart_requested
-        )
+        needs_sign_in = completion.get("cinnamon_shell") and not restart_requested
         if needs_sign_in:
             self.done_title = _("Restore finished. Sign in again to apply the remaining changes.")
         else:
@@ -689,10 +687,10 @@ class MainWindow(Adw.ApplicationWindow):
             details.append(_("Cinnamon restart requested. Open applications stay in the current session."))
         elif completion.get("cinnamon_shell"):
             details.append(_("Sign out and sign in again to reload Cinnamon."))
+        if completion.get("nemo_pending") or self.flatpaks_pending:
+            details.append(_("To continue in this session, open “SaveDesktop Plus — Apply pending restore” from your system menu."))
         if completion.get("nemo_pending"):
-            details.append(_("Nemo desktop layout will be applied the next time you sign in to Cinnamon."))
-        if self.flatpaks_pending:
-            details.append(_("Flatpak restoration is ready. Close the affected apps, then copy and run the command in your system terminal to restore them now."))
+            details.append(_("If you defer the Nemo desktop layout, it will be applied at the next sign-in."))
         if not environment or environment["de_name"] != "Cinnamon":
             details.append(_("Some desktop settings may require signing in again."))
         if message:

@@ -69,7 +69,7 @@ def apply_pending(pending, destination):
             _apply_pending(pending, destination)
 
 
-def _apply_pending(pending, destination):
+def _apply_pending(pending, destination, *, consume=True):
     if pending.is_symlink() or any(path.is_symlink() for path in (destination, *destination.parents)):
         raise ValueError("Symbolic link in Nemo desktop metadata restore")
 
@@ -86,7 +86,8 @@ def _apply_pending(pending, destination):
     try:
         destination_data.save_to_file(str(temporary))
         temporary.replace(destination)
-        pending.unlink()
+        if consume:
+            pending.unlink()
     finally:
         temporary.unlink(missing_ok=True)
 

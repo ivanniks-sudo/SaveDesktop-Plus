@@ -136,6 +136,37 @@ def create_flatpak_autostart(root):
     print("[OK] Created Flatpak autostart")
     return True
 
+def prepare_session_launcher(flatpaks_pending):
+    state = home / ".config" / APP_ID
+    helper = state / "session_restore_host.py"
+    launcher = home / ".local/share/applications" / f"{APP_ID}.RestoreHost.desktop"
+    entry = GLib.KeyFile()
+    section = "Desktop Entry"
+    entry.set_string(section, "Name", "SaveDesktop Plus — Apply pending restore")
+    entry.set_locale_string(section, "Name", "ru", "SaveDesktop Plus — Применить восстановление")
+    entry.set_string(section, "Type", "Application")
+    entry.set_string(section, "Categories", "Utility;")
+    argument = str(helper).replace("%", "%%")
+    for char in ('\\', '"', '`', '$'):
+        argument = argument.replace(char, '\\' + char)
+    entry.set_string(section, "Exec", f'/usr/bin/python3 "{argument}"')
+    with tempfile.TemporaryDirectory(prefix="sdp-session-launcher-") as directory:
+        staging = Path(directory)
+        desktop_file = staging / launcher.name
+        entry.save_to_file(str(desktop_file))
+        restore_file(Path(__file__).with_name("session_restore_host.py"), helper)
+        locale = os.environ.get("SAVEDESKTOP_LOCALE")
+        if locale:
+            catalogue = Path(locale) / "ru/LC_MESSAGES/savedesktop.mo"
+            if catalogue.is_file():
+                restore_file(catalogue, state / "locale/ru/LC_MESSAGES/savedesktop.mo")
+        if flatpaks_pending:
+            pointer = staging / "flatpak-workspace"
+            pointer.write_text(str(Path(CACHE) / "workspace"), encoding="utf-8")
+            restore_file(pointer, state / pointer.name)
+        restore_file(desktop_file, launcher)
+
+
 def save_bookmarks():
     safe_copytree(f"{home}/.config/gtk-4.0", "General/gtk-4.0")
     if settings["save-bookmarks"]:
@@ -468,6 +499,8 @@ class Import:
             geometries = [monitor.get_geometry() for monitor in display.get_monitors()] if display else []
             monitors = [(geometry.width, geometry.height) for geometry in geometries]
             self.nemo_pending = queue_desktop_configuration(root, home / ".config", APP_ID, monitors)
+        if self.flatpaks_pending or self.nemo_pending:
+            prepare_session_launcher(self.flatpaks_pending)
 
     def import_dconf(self, dump):
         env = os.environ.copy()
