@@ -104,6 +104,11 @@ def restore(workspace, home):
     if preferences.is_symlink():
         raise ValueError("Flatpak restore preferences cannot be a symbolic link")
     prefs = json.loads(preferences.read_text(encoding="utf-8"))
+    if (not isinstance(prefs, dict) or
+            any(type(prefs.get(key)) is not bool for key in ("install-flatpaks", "copy-data", "keep-flatpaks")) or
+            not isinstance(prefs.get("disabled-flatpaks"), list) or
+            any(not isinstance(app, str) or not APP.fullmatch(app) for app in prefs["disabled-flatpaks"])):
+        raise ValueError("Invalid Flatpak restore preferences")
     journal = workspace / "flatpak-completed.json"
     section = workspace / "Flatpak_Apps"
     if journal.is_symlink() or section.is_symlink():
@@ -127,7 +132,7 @@ def restore(workspace, home):
         print(f"↓ Installing {app} ({index}/{len(missing)})", flush=True)
         try:
             run("remote-add", scope, "--if-not-exists", "flathub", FLATHUB)
-            run("install", scope, "--noninteractive", "-y", "flathub", app)
+            run("install", scope, "-y", "flathub", app)
         except (OSError, subprocess.CalledProcessError) as error:
             failures.append(f"{app} ({scope}): {error}")
         else:
@@ -178,7 +183,7 @@ def restore(workspace, home):
                     continue
                 print(f"[REMOVE] {scope} {app}", flush=True)
                 # Flatpak data are shared between installations. Keep the files for manual cleanup.
-                run("uninstall", scope, "--noninteractive", "-y", app)
+                run("uninstall", scope, "-y", app)
             except (OSError, subprocess.CalledProcessError) as error:
                 failures.append(f"{app} ({scope}): {error}")
 

@@ -192,6 +192,29 @@ def install_host():
     return helper
 
 
+def remove_host():
+    if not prompt(
+        _("Remove the current-session restore service? Pending sign-in restores will be kept."),
+        _("Remove the restore service"), _("Cancel"),
+    ):
+        return
+    base = HOME / ".local"
+    service = base / "share/dbus-1/services" / (SERVICE + ".service")
+    installed = base / "libexec" / APP_ID
+    launcher = base / "share/applications" / (SERVICE + ".desktop")
+    for destination in (service, installed, launcher):
+        if any(path.is_symlink() for path in (destination, *destination.parents)):
+            raise ValueError("The restore service path contains a symbolic link")
+    bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+    if bus_call(bus, "NameHasOwner", SERVICE):
+        raise RuntimeError("Close the running restore service before removing it")
+    service.unlink(missing_ok=True)
+    launcher.unlink(missing_ok=True)
+    if installed.is_dir():
+        shutil.rmtree(installed)
+    show_result(_("The current-session restore service was removed."))
+
+
 def review():
     pending = STATE / "nemo-desktop-pending.json"
     workspace = HOME / ".var/app" / APP_ID / "cache/tmp/workspace"
@@ -255,7 +278,12 @@ def main():
             print(f"Restore service setup: {error}", file=sys.stderr)
         else:
             os.execv("/usr/bin/python3", ("/usr/bin/python3", "-I", helper))
-    if "--dbus" in sys.argv[1:]:
+    if "--remove-service" in sys.argv[1:]:
+        try:
+            remove_host()
+        except (OSError, ValueError, RuntimeError, GLib.Error) as error:
+            show_result(str(error))
+    elif "--dbus" in sys.argv[1:]:
         serve()
     else:
         review()

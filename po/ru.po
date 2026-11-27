@@ -863,3 +863,12 @@ msgstr "Настройка восстановления в текущем сеа
 
 msgid "For first-time setup, open “SaveDesktop Plus — Apply pending restore” from your system menu."
 msgstr "Для первоначальной настройки откройте «SaveDesktop Plus — Применить восстановление» в системном меню."
+
+msgid "Remove the current-session restore service? Pending sign-in restores will be kept."
+msgstr "Удалить службу восстановления в текущем сеансе? Операции, отложенные до следующего входа, сохранятся."
+
+msgid "Remove the restore service"
+msgstr "Удалить службу восстановления"
+
+msgid "The current-session restore service was removed."
+msgstr "Служба восстановления в текущем сеансе удалена."

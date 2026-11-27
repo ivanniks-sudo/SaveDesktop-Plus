@@ -150,6 +150,11 @@ def prepare_session_launcher():
     for char in ('\\', '"', '`', '$'):
         argument = argument.replace(char, '\\' + char)
     entry.set_string(section, "Exec", f'/usr/bin/python3 -I "{argument}" --bootstrap')
+    entry.set_string(section, "Actions", "RemoveHelper;")
+    action = "Desktop Action RemoveHelper"
+    entry.set_string(action, "Name", "Remove the restore service")
+    entry.set_locale_string(action, "Name", "ru", "Удалить службу восстановления")
+    entry.set_string(action, "Exec", f'/usr/bin/python3 -I "{argument}" --remove-service')
     with tempfile.TemporaryDirectory(prefix="sdp-session-launcher-") as directory:
         staging = Path(directory)
         desktop_file = staging / launcher.name
