@@ -1,8 +1,9 @@
 import os
+from pathlib import Path
 
-from gi.repository import Adw, Gio, Gtk, GLib
+from gi.repository import Adw, Gio, Gtk, GLib, Pango
 
-from savedesktop.core.custom_dirs import check_destination, folder_destination, original_path, validate_folder_plan
+from savedesktop.core.custom_dirs import check_destination, destination_from_grant, folder_destination, original_path, validate_folder_plan
 from savedesktop.globals import flatpak, home
 
 
@@ -14,7 +15,7 @@ class RestoreFoldersDialog(Adw.AlertDialog):
         self.finished = finished
         self.rows = []
         self.set_heading(_("Restore custom folders"))
-        self.set_body(_("Confirm a destination for each selected folder. Hidden folders: Ctrl+H in the file chooser."))
+        self.set_body(_("Confirm a destination for each selected folder."))
         self.add_response("cancel", _("Cancel"))
         self.add_response("ok", _("Restore"))
         self.set_response_appearance("ok", Adw.ResponseAppearance.SUGGESTED)
@@ -44,9 +45,11 @@ class RestoreFoldersDialog(Adw.AlertDialog):
             choose = Gtk.Button(icon_name="folder-open-symbolic", tooltip_text=_("Choose folder"))
             target.append(choose)
             row.append(target)
+            full_path = Gtk.Label(xalign=0, wrap=True, wrap_mode=Pango.WrapMode.WORD_CHAR, selectable=True, css_classes=["dim-label"])
+            row.append(full_path)
             status = Gtk.Label(xalign=0, wrap=True, css_classes=["dim-label"])
             row.append(status)
-            record = {"folder": folder, "selected": selected, "entry": entry, "status": status, "grant": None}
+            record = {"folder": folder, "selected": selected, "entry": entry, "status": status, "grant": None, "full_path": full_path}
             self.rows.append(record)
             valid = self._update(record)
             # Existing absolute source paths outside the original home require explicit confirmation.
@@ -59,16 +62,18 @@ class RestoreFoldersDialog(Adw.AlertDialog):
 
     def _edited(self, entry, record):
         record["grant"] = None
-        self._update(record)
+        if self._update(record):
+            record["selected"].set_active(True)
         self._update_apply()
 
-    def _update(self, record):
+    def _update(self, record, *, probe_portal=False):
         text = os.path.expanduser(record["entry"].get_text())
         record["entry"].set_tooltip_text(text)
+        record["full_path"].set_text(text)
         try:
-            path = check_destination(record["grant"] or text)
-        except ValueError:
-            record["status"].set_text(_("Choose a writable destination folder."))
+            path = check_destination(record["grant"] or text, probe_portal=probe_portal)
+        except ValueError as error:
+            record["status"].set_text(str(error))
             return False
         record["status"].set_text("" if path.exists() else _("This folder will be created."))
         return True
@@ -76,8 +81,9 @@ class RestoreFoldersDialog(Adw.AlertDialog):
     def _choose(self, button, record):
         chooser = Gtk.FileDialog(title=_("Choose folder"), modal=True)
         path = os.path.expanduser(record["entry"].get_text())
-        if os.path.isdir(path):
-            chooser.set_initial_folder(Gio.File.new_for_path(path))
+        if Path(path).is_absolute():
+            initial = Path(path) if os.path.isdir(path) else Path(path).parent
+            chooser.set_initial_folder(Gio.File.new_for_path(str(initial)))
 
         def chosen(source, result, _data):
             try:
@@ -86,9 +92,10 @@ class RestoreFoldersDialog(Adw.AlertDialog):
                 return
             if access:
                 location = original_path(access, flatpak=flatpak)
-                record["entry"].set_text(location or "")
-                record["grant"] = access
-                if self._update(record):
+                grant, display = destination_from_grant(path, access, location)
+                record["entry"].set_text(display or "")
+                record["grant"] = grant
+                if self._update(record, probe_portal=True):
                     if not location:
                         record["status"].set_text(_("Access granted to the selected folder. Its original location is unavailable."))
                     record["selected"].set_active(True)
@@ -105,15 +112,23 @@ class RestoreFoldersDialog(Adw.AlertDialog):
     def _update_apply(self):
         try:
             validate_folder_plan(self.folders, self._plan())
-        except ValueError:
+        except ValueError as error:
             self.set_response_enabled("ok", False)
-            self.set_body(_("Each selected folder needs a different writable destination."))
+            self.set_body(str(error))
         else:
             self.set_response_enabled("ok", True)
-            self.set_body(_("Confirm a destination for each selected folder. Hidden folders: Ctrl+H in the file chooser."))
+            self.set_body(_("Confirm a destination for each selected folder."))
 
     def _respond(self, dialog, response):
         if response == "ok":
-            self.finished(self._plan())
+            try:
+                plan = validate_folder_plan(self.folders, self._plan(), probe_portal=True)
+            except ValueError as error:
+                self.finished(None)
+                notice = Adw.AlertDialog.new(_("An error occurred"), str(error))
+                notice.add_response("close", _("Close"))
+                notice.present(self.parent)
+            else:
+                self.finished(plan)
         else:
             self.finished(None)

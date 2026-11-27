@@ -385,7 +385,7 @@ class Import:
         general = root / "General" if (root / "General").is_dir() else root
         folders = read_folder_metadata(root)
         plan = options.get("folders", {})
-        validate_folder_plan(folders, plan)
+        plan = validate_folder_plan(folders, plan, probe_portal=True)
         cinnamon = bool(environment and environment["de_name"] == "Cinnamon")
         restore_background = options.get("wallpaper", settings["save-backgrounds"])
         restore_contents = options.get("desktop_contents", settings["save-desktop-folder"])

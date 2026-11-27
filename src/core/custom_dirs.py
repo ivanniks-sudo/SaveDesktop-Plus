@@ -2,7 +2,9 @@ import os
 from pathlib import Path
 import re
 import shutil
+import stat
 import sys
+import tempfile
 
 
 def portal_parts(path, mount):
@@ -180,33 +182,63 @@ def is_persistent_destination(path):
     return selected_mount != Path("/tmp") and filesystem not in (None, "tmpfs", "ramfs")
 
 
-def check_destination(value):
+def check_destination(value, *, probe_portal=False):
     path = Path(value)
     if not path.is_absolute() or not path.name or ".." in path.parts:
         raise ValueError("Enter an absolute destination folder path.")
-    for ancestor in (path, *path.parents):
-        if ancestor.is_symlink():
-            raise ValueError(f"Destination contains a symbolic link: {ancestor}")
-    for ancestor in (path, *path.parents):
-        if ancestor.exists():
-            if not ancestor.is_dir() or not os.access(ancestor, os.W_OK | os.X_OK):
-                raise ValueError(f"Destination is not writable: {ancestor}")
+    try:
+        # A user-selected path may legitimately contain a host symlink. The
+        # restore plan carries the resolved path, so the copy never follows it.
+        path = path.resolve()
+        for ancestor in (path, *path.parents):
+            try:
+                info = ancestor.stat()
+            except FileNotFoundError:
+                continue
+            if not stat.S_ISDIR(info.st_mode):
+                raise ValueError(f"Destination is not a directory: {ancestor}")
             if not is_persistent_destination(ancestor):
-                raise ValueError("Choose a destination exposed by Flatpak or Document Portal.")
+                raise ValueError(
+                    f"The sandbox cannot save to the host at {ancestor}. "
+                    "Use the folder chooser to grant access to the destination or its parent."
+                )
+            from gi.repository import GLib
+            granted = portal_parts(str(ancestor), Path(GLib.get_user_runtime_dir()) / "doc")
+            if granted and probe_portal:
+                # FUSE access() can disagree with actual write permissions.
+                with tempfile.TemporaryDirectory(prefix=".sdplus-write-", dir=ancestor):
+                    pass
+            elif not granted and not os.access(ancestor, os.W_OK | os.X_OK):
+                raise ValueError(f"Destination is not writable: {ancestor}")
             return path
+    except (OSError, RuntimeError) as error:
+        raise ValueError(f"Cannot access destination {value}: {error.strerror if isinstance(error, OSError) else error}") from error
     raise ValueError("Destination is not accessible.")
 
 
-def validate_folder_plan(entries, plan):
+def destination_from_grant(requested, access, location):
+    """Keep the requested suffix when the user grants its existing parent."""
+    if location and requested:
+        requested_path = Path(requested)
+        host = Path(location)
+        if requested_path.is_relative_to(host):
+            return str(Path(access) / requested_path.relative_to(host)), requested
+    return access, location
+
+
+def validate_folder_plan(entries, plan, *, probe_portal=False):
     known = {entry["archive_path"] for entry in entries}
     destinations = set()
+    validated = {}
     for key, destination in plan.items():
         if key not in known:
             raise ValueError(f"Unknown custom folder: {key}")
-        path = check_destination(destination)
+        path = check_destination(destination, probe_portal=probe_portal)
         if path in destinations:
             raise ValueError(f"Multiple folders use the same destination: {path}")
         destinations.add(path)
+        validated[key] = str(path)
+    return validated
 
 
 
