@@ -1,4 +1,4 @@
-import sys, gi, threading, time, shutil, os, re
+import sys, gi, threading, time, os, re
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
 from gi.repository import Gtk, Adw, Gio, GLib
@@ -99,7 +99,7 @@ class FlatpaksWindow(Adw.ApplicationWindow):
 
                     GLib.idle_add(self.add_text_to_ui, line)
 
-                    if "✔ All operations have been completed successfully." in line:
+                    if line.startswith("[RESULT] ") or "✔ All operations have been completed successfully." in line:
                         print("[THREAD] Success string found. Stopping background read.")
                         break
 
@@ -111,12 +111,21 @@ class FlatpaksWindow(Adw.ApplicationWindow):
         buffer = self.text_view.get_buffer()
         end_iter = buffer.get_end_iter()
 
-        # Full completion
-        if "✔ All operations have been completed successfully." in text or "There's no need to install any new apps, since they're all available on your system." in text:
+        if text.startswith("[RESULT] "):
+            result = text.split()[1]
+            if result == "success":
+                self.progress_bar.set_fraction(1.0)
+                self.status_page.set_icon_name("done")
+                self.status_page.set_description(_("Flatpak restoration completed."))
+                self.send_completion_notification()
+            elif result == "partial":
+                self.status_page.set_description(_("Some Flatpak apps or data were not restored. Review the log, close affected apps, and retry."))
+            else:
+                self.status_page.set_description(_("Flatpak restoration stopped with an error. Review the log before retrying."))
+            return False
+        if "✔ All operations have been completed successfully." in text:
             self.progress_bar.set_fraction(1.0)
             self.send_completion_notification()
-            cleanup_thread = threading.Thread(target=self.cache_cleanup)
-            cleanup_thread.start()
 
         # Pulse effect for ANY active operation
         if any(keyword in text for keyword in ["↓ Installing", "[COPY]", "[REMOVE]"]):
@@ -150,6 +159,9 @@ class FlatpaksWindow(Adw.ApplicationWindow):
     def translate_log_line(self, original_text):
         # Remove whitespace/newlines for easier exact matching
         text = original_text.strip()
+
+        if text.startswith("[PENDING] "):
+            return _("Pending Flatpak app or data: {app}").format(app=text[len("[PENDING] "):]) + "\n"
 
         if text == "✔ All operations have been completed successfully.":
             return _("✔ All operations have been completed successfully.") + "\n"
@@ -211,38 +223,11 @@ class FlatpaksWindow(Adw.ApplicationWindow):
         if app:
             app.send_notification("install-complete", notification)
 
-    def cache_cleanup(self):
-        if os.path.exists(f"{CACHE}/workspace"):
-            shutil.rmtree(f"{CACHE}/workspace")
-
-        GLib.idle_add(self.start_auto_close_timer)
-
-    def start_auto_close_timer(self):
-        # 300 seconds = 2 minutes
-        # GLib.timeout_add_seconds will wait in the background and then execute 'self.close_app'
-        GLib.timeout_add_seconds(120, self.close_app_after_timer)
-
-        self.set_title(_("Your apps have been installed!"))
-        self.status_page.set_icon_name("done")
-        self.status_page.set_description(_("This window will be closed automatically in 2 minutes."))
-
-        return False # tells idle_add to only run this setup once
-
-    # Close the app window after 2 minutes
-    def close_app_after_timer(self):
-        # This is triggered when the 2 minutes are up.
-        # Safely closes the current GTK window.
-        self.close()
-
-        return False # tells the timeout timer not to repeat itself
-
     # Close the app window manually by clicking on the window's close button
     def on_manual_close(self, w):
         self.hide()
 
-        # If the mentioned path exists, the app window will not be destroyed
-        if os.path.exists(f"{CACHE}/workspace"):
-            return True
+        return False
 
 class FlatpaksInstallerApp(Adw.Application):
     def __init__(self, **kwargs):

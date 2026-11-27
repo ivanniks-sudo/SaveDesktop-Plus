@@ -797,3 +797,21 @@ msgstr "Для восстановления этой папки необходи
 
 msgid "To restore this folder, grant access. Click the folder icon and select the destination folder or its nearest existing parent."
 msgstr "Для восстановления этой папки необходимо предоставить доступ. Нажмите значок папки и выберите папку назначения или ближайшую существующую папку, в которой она находится."
+
+msgid "Flatpak restoration is ready. Close the affected apps, then copy and run the command in your system terminal to restore them now."
+msgstr "Восстановление Flatpak подготовлено. Чтобы выполнить его сейчас, закройте затронутые приложения, скопируйте команду и выполните её в системном терминале."
+
+msgid "Copy Flatpak restore command"
+msgstr "Скопировать команду восстановления Flatpak"
+
+msgid "Flatpak restoration completed."
+msgstr "Восстановление Flatpak завершено."
+
+msgid "Some Flatpak apps or data were not restored. Review the log, close affected apps, and retry."
+msgstr "Часть приложений Flatpak или их данных не восстановлена. Проверьте журнал, закройте затронутые приложения и повторите попытку."
+
+msgid "Flatpak restoration stopped with an error. Review the log before retrying."
+msgstr "Восстановление Flatpak остановлено из-за ошибки. Проверьте журнал перед повторной попыткой."
+
+msgid "Pending Flatpak app or data: {app}"
+msgstr "Ожидает восстановления приложение Flatpak или его данные: {app}"

@@ -5,6 +5,7 @@ gi.require_version('Adw', '1')
 from gi.repository import Gtk, Adw, Gio, GLib, Gdk
 from datetime import date
 from pathlib import Path
+from shlex import quote
 from threading import Thread
 from savedesktop.globals import *
 from savedesktop.gui.more_options_dialog import MoreOptionsDialog
@@ -676,7 +677,8 @@ class MainWindow(Adw.ApplicationWindow):
     def _restore_done(self, message, completion, restart_requested):
         self._finish_import_session()
         details = []
-        needs_sign_in = completion.get("nemo_pending") or completion.get("flatpaks_pending") or (
+        self.flatpaks_pending = bool(completion.get("flatpaks_pending"))
+        needs_sign_in = completion.get("nemo_pending") or (
             completion.get("cinnamon_shell") and not restart_requested
         )
         if needs_sign_in:
@@ -689,8 +691,8 @@ class MainWindow(Adw.ApplicationWindow):
             details.append(_("Sign out and sign in again to reload Cinnamon."))
         if completion.get("nemo_pending"):
             details.append(_("Nemo desktop layout will be applied the next time you sign in to Cinnamon."))
-        if completion.get("flatpaks_pending"):
-            details.append(_("The selected Flatpak apps or data will be restored at the next sign-in."))
+        if self.flatpaks_pending:
+            details.append(_("Flatpak restoration is ready. Close the affected apps, then copy and run the command in your system terminal to restore them now."))
         if not environment or environment["de_name"] != "Cinnamon":
             details.append(_("Some desktop settings may require signing in again."))
         if message:
@@ -807,6 +809,13 @@ class MainWindow(Adw.ApplicationWindow):
             self.open_folder_button.set_halign(Gtk.Align.CENTER)
             self.buttons_box.append(self.open_folder_button)
         elif self.archive_mode == "--unpack":
+            if getattr(self, "flatpaks_pending", False):
+                button = Gtk.Button(label=_("Copy Flatpak restore command"), css_classes=["pill"])
+                button.set_halign(Gtk.Align.CENTER)
+                helper = quote(str(Path(CACHE) / "workspace" / "flatpaks_installer.py"))
+                command = f"/usr/bin/python3 -u {helper} --show-progress"
+                button.connect("clicked", lambda widget: widget.get_clipboard().set(command))
+                self.buttons_box.append(button)
             self.logout_button = Gtk.Button.new_with_label(_("Log Out"))
             self.logout_button.add_css_class('pill')
             self.logout_button.add_css_class('suggested-action')
