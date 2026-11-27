@@ -9,7 +9,7 @@ from savedesktop.core.synchronization_setup import create_savedesktop_json
 from savedesktop.globals import *
 
 class itemsDialog(Adw.AlertDialog):
-    def __init__(self, parent, items_list=None):
+    def __init__(self, parent, items_list=None, *, desktop_available=None):
         super().__init__()
         self.parent = parent
         self.restoring = items_list is not None
@@ -17,7 +17,10 @@ class itemsDialog(Adw.AlertDialog):
         self.items_list = items_list if items_list is not None else []
 
         self.set_heading(_("Select configuration items"))
-        self.set_body(_("These settings are used for manual and periodic saves, imports, and synchronization."))
+        self.set_body(
+            _("Choose the components to restore from this backup.") if self.restoring
+            else _("These settings are used for manual and periodic saves, imports, and synchronization.")
+        )
         
         # Box for loading widgets in this dialog
         self.itemsBox = Gtk.ListBox.new()
@@ -73,25 +76,14 @@ class itemsDialog(Adw.AlertDialog):
         if self.should_show("fonts", ".fonts"):
             self.itemsBox.append(child=self.fonts_row)
         
-        # Switch and row of option 'Save backgrounds'
-        self.switch_04 = Gtk.CheckButton.new() if cinnamon_restore else Gtk.Switch.new()
-        if settings["save-backgrounds"]:
-            self.switch_04.set_active(True)
-        self.switch_04.set_valign(align=Gtk.Align.CENTER)
-         
-        self.backgrounds_row = Adw.ActionRow.new()
-        self.backgrounds_row.set_title(title=(
-            _("Restore desktop wallpaper") if cinnamon_restore
-            else _("Backgrounds")
-        ))
-        self.backgrounds_row.set_use_markup(True)
-        self.backgrounds_row.set_title_lines(2)
-        self.backgrounds_row.set_subtitle_lines(3)
-        self.backgrounds_row.add_suffix(self.switch_04)
-        self.backgrounds_row.set_activatable_widget(self.switch_04)
-        if self.should_show("backgrounds", "wallpapers", "Wallpaper.json") or cinnamon_restore:
-            self.itemsBox.append(child=self.backgrounds_row)
-        
+        if not cinnamon_restore:
+            self.switch_04 = Gtk.Switch(active=settings["save-backgrounds"], valign=Gtk.Align.CENTER)
+            self.backgrounds_row = Adw.ActionRow(title=_("Wallpaper") if environment["de_name"] == "Cinnamon" else _("Backgrounds"))
+            self.backgrounds_row.add_suffix(self.switch_04)
+            self.backgrounds_row.set_activatable_widget(self.switch_04)
+            if self.should_show("backgrounds", "wallpapers", "Wallpaper.json"):
+                self.itemsBox.append(self.backgrounds_row)
+
         # show extension switch and row if user has installed these environments
         if environment["de_name"] in ["GNOME", "Cinnamon", "COSMIC (Old)", "KDE Plasma"]:
             self.show_extensions_row()
@@ -115,32 +107,36 @@ class itemsDialog(Adw.AlertDialog):
                 self.itemsBox.append(child=self.gtk_row)
 
         if cinnamon_restore:
-            configuration = Adw.ActionRow(title=_("Restore desktop configuration"))
-            self.desktop_configuration = Gtk.CheckButton(active=True, valign=Gtk.Align.CENTER)
-            configuration.add_suffix(self.desktop_configuration)
-            configuration.set_activatable_widget(self.desktop_configuration)
-            self.itemsBox.append(configuration)
-
-        # Switch and row of option 'Save Desktop' (~/Desktop)
-        self.switch_de = Gtk.CheckButton.new() if cinnamon_restore else Gtk.Switch.new()
-        if settings["save-desktop-folder"]:
-            self.switch_de.set_active(True)
-        self.switch_de.set_valign(align=Gtk.Align.CENTER)
-
-        self.desktop_row = Adw.ActionRow.new()
-        self.desktop_row.set_title(title=_("Restore desktop contents") if self.restoring else _("Desktop"))
-        self.desktop_row.set_tooltip_text(GLib.get_user_special_dir(GLib.UserDirectory.DIRECTORY_DESKTOP))
-        self.desktop_row.set_subtitle_selectable(True)
-        self.desktop_row.set_use_markup(True)
-        self.desktop_row.set_title_lines(2)
-        self.desktop_row.add_suffix(self.switch_de)
-        self.desktop_row.set_activatable_widget(self.switch_de)
-        has_desktop_contents = self.should_show("desktop-folder.tgz")
-        if cinnamon_restore and not has_desktop_contents:
-            self.switch_de.set_active(False)
-            self.desktop_row.set_sensitive(False)
-        if has_desktop_contents or cinnamon_restore:
-            self.itemsBox.append(child=self.desktop_row)
+            desktop = Adw.ExpanderRow(title=_("Desktop"), expanded=True)
+            available = desktop_available or {}
+            checks = (
+                ("switch_04", "wallpaper", _("Wallpaper"), settings["save-backgrounds"],
+                 _("This backup contains no wallpaper settings or images.")),
+                ("desktop_configuration", "configuration", _("Desktop configuration"), True,
+                 _("This backup contains no desktop configuration.")),
+                ("switch_de", "contents", _("Desktop files and folders"), settings["save-desktop-folder"],
+                 _("This backup contains no desktop files or folders.")),
+            )
+            for attribute, component, title, active, reason in checks:
+                enabled = available.get(component, True)
+                row = Adw.ActionRow(title=title, sensitive=enabled)
+                if not enabled:
+                    row.set_subtitle(reason)
+                button = Gtk.CheckButton(active=bool(active and enabled), valign=Gtk.Align.CENTER)
+                button.update_property([Gtk.AccessibleProperty.LABEL], [title])
+                row.add_suffix(button)
+                row.set_activatable_widget(button)
+                desktop.add_row(row)
+                setattr(self, attribute, button)
+            self.itemsBox.append(desktop)
+        else:
+            self.switch_de = Gtk.Switch(active=settings["save-desktop-folder"], valign=Gtk.Align.CENTER)
+            self.desktop_row = Adw.ActionRow(title=_("Desktop files and folders"))
+            self.desktop_row.set_tooltip_text(GLib.get_user_special_dir(GLib.UserDirectory.DIRECTORY_DESKTOP))
+            self.desktop_row.add_suffix(self.switch_de)
+            self.desktop_row.set_activatable_widget(self.switch_de)
+            if self.should_show("desktop-folder.tgz"):
+                self.itemsBox.append(self.desktop_row)
 
         # Custom directories section
         self.custom_switch = Gtk.Switch.new()

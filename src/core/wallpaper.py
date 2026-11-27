@@ -59,14 +59,24 @@ def save_wallpaper(dump, folders):
     if matches:
         depth, folder, relative = max(matches)
         location = {"folder": folder, "relative": relative}
-    elif image.is_file():
-        directory = Path("General/Wallpaper")
-        directory.mkdir(exist_ok=True)
-        shutil.copy2(image, directory / image.name)
-        location = {"file": image.name}
     else:
-        print(_("The wallpaper image could not be included in the backup."), file=sys.stderr)
-        return
+        try:
+            source = image.open("rb")
+        except FileNotFoundError:
+            print(_("Wallpaper image is missing: {path}").format(path=image), file=sys.stderr)
+            return
+        except PermissionError:
+            print(_("No permission to read wallpaper image: {path}").format(path=image), file=sys.stderr)
+            return
+        except OSError as error:
+            print(_("Cannot read wallpaper image {path}: {reason}").format(path=image, reason=error.strerror), file=sys.stderr)
+            return
+        with source:
+            directory = Path("General/Wallpaper")
+            directory.mkdir(exist_ok=True)
+            with (directory / image.name).open("wb") as destination:
+                shutil.copyfileobj(source, destination)
+        location = {"file": image.name}
     Path("General/Wallpaper.json").write_text(json.dumps(location, ensure_ascii=False), encoding="utf-8")
 
 

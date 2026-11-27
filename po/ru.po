@@ -689,3 +689,69 @@ msgstr "Текущие обои сохранены, поскольку изоб�
 #: src/gui/items_dialog.py
 msgid "Restore desktop configuration"
 msgstr "Восстановить конфигурацию рабочего стола"
+
+msgid "Close"
+msgstr "Закрыть"
+
+msgid "Wallpaper"
+msgstr "Обои"
+
+msgid "Desktop configuration"
+msgstr "Конфигурация рабочего стола"
+
+msgid "Desktop files and folders"
+msgstr "Файлы и папки рабочего стола"
+
+msgid "Confirm a destination for each selected folder."
+msgstr "Подтвердите назначение для каждой выбранной папки."
+
+msgid "Choose the components to restore from this backup."
+msgstr "Выберите компоненты для восстановления из этой копии."
+
+msgid "Analyzing backup…"
+msgstr "Анализ резервной копии…"
+
+msgid "This backup contains no wallpaper settings or images."
+msgstr "В копии нет настроек обоев или изображений."
+
+msgid "This backup contains no desktop configuration."
+msgstr "В копии нет конфигурации рабочего стола."
+
+msgid "This backup contains no desktop files or folders."
+msgstr "В копии нет файлов или папок рабочего стола."
+
+msgid "Backup created with warnings"
+msgstr "Резервная копия создана с предупреждениями"
+
+msgid "The backup was created. Some data could not be saved."
+msgstr "Резервная копия создана. Часть данных сохранить не удалось."
+
+msgid "Wallpaper image is missing: {path}"
+msgstr "Изображение обоев отсутствует: {path}"
+
+msgid "No permission to read wallpaper image: {path}"
+msgstr "Нет разрешения на чтение изображения обоев: {path}"
+
+msgid "Cannot read wallpaper image {path}: {reason}"
+msgstr "Не удалось прочитать изображение обоев {path}: {reason}"
+
+msgid "Enter an absolute destination folder path."
+msgstr "Укажите абсолютный путь к папке назначения."
+
+msgid "Destination is not a directory: {path}"
+msgstr "Назначение не является папкой: {path}"
+
+msgid "The sandbox cannot save to the host at {path}. Use the folder chooser to grant access to the destination or its parent."
+msgstr "Песочница не может записать данные на хост по пути {path}. Через диалог выбора предоставьте доступ к папке назначения или к её родительской папке."
+
+msgid "Destination is not writable: {path}"
+msgstr "Нет доступа на запись: {path}"
+
+msgid "Cannot access destination {path}: {reason}"
+msgstr "Нет доступа к назначению {path}: {reason}"
+
+msgid "Destination is not accessible."
+msgstr "Папка назначения недоступна."
+
+msgid "Multiple folders use the same destination: {path}"
+msgstr "Для нескольких папок указано одно назначение: {path}"

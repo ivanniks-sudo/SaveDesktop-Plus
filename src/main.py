@@ -46,8 +46,12 @@ class SaveDesktopApp(Adw.Application):
 
     # Open the "Items to include in the configuration archive" dialog using Ctrl+Shift+I keyboard shortcut
     def call_items_dialog(self, action, param):
+        if self.win.import_session is not None:
+            return
+        if self.win.stack.get_visible_child_name() == "importpage":
+            self.win.select_file_to_import(w=None)
+            return
         self.items_dialog = itemsDialog(self.win)
-        self.items_dialog.choose(self.win, None, None, None)
         self.items_dialog.present(self.win)
 
     # Open the "Set up the sync file" dialog using Ctrl+Shift+S keyboard shortcut

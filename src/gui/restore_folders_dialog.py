@@ -73,8 +73,10 @@ class RestoreFoldersDialog(Adw.AlertDialog):
         try:
             path = check_destination(record["grant"] or text, probe_portal=probe_portal)
         except ValueError as error:
-            record["status"].set_text(str(error))
+            record["error"] = str(error)
+            record["status"].set_text(record["error"])
             return False
+        record["error"] = None
         record["status"].set_text("" if path.exists() else _("This folder will be created."))
         return True
 
@@ -111,6 +113,9 @@ class RestoreFoldersDialog(Adw.AlertDialog):
 
     def _update_apply(self):
         try:
+            for record in self.rows:
+                if record["selected"].get_active() and record["error"]:
+                    raise ValueError(record["error"])
             validate_folder_plan(self.folders, self._plan())
         except ValueError as error:
             self.set_response_enabled("ok", False)

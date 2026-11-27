@@ -3,6 +3,7 @@
 data/io.github.ivanniks_sudo.SaveDesktopPlus.desktop.in
 data/io.github.ivanniks_sudo.SaveDesktopPlus.metainfo.xml.in
 data/io.github.ivanniks_sudo.SaveDesktopPlus.gschema.xml
+src/core/custom_dirs.py
 src/core/synchronization.py
 src/core/wallpaper.py
 src/gui/custom_dirs_dialog.py

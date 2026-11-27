@@ -12,6 +12,8 @@ from savedesktop.gui.items_dialog import itemsDialog
 from savedesktop.gui.restore_folders_dialog import RestoreFoldersDialog
 from savedesktop.core.backup_input import prepare_backup
 from savedesktop.core.custom_dirs import read_folder_metadata
+from savedesktop.core.desktop_configuration import filter_desktop_settings
+from savedesktop.core.wallpaper import split_wallpaper
 from savedesktop.gui.synchronization_dialogs import InitSetupDialog, SetDialog, CloudDialog
 
 # Application window
@@ -19,6 +21,8 @@ class MainWindow(Adw.ApplicationWindow):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.set_title(APP_NAME)
+        self.import_session = None
+        self.import_cancelled = False
         self.app_wiki = "https://vikdevelop.github.io/SaveDesktop/wiki"
 
         # header bar and toolbarview
@@ -329,6 +333,8 @@ class MainWindow(Adw.ApplicationWindow):
 
     # Select folder for saving configuration
     def select_folder(self, w):
+        if self.import_session is not None:
+            return
         def save_selected(source, res, data):
             try:
                 folder = source.select_folder_finish(res)
@@ -354,62 +360,66 @@ class MainWindow(Adw.ApplicationWindow):
         self.folderchooser.set_title(_("Save the current configuration"))
         self.folderchooser.select_folder(self, None, save_selected, None)
 
-    # Select a ZIP or TAR.GZ file to import
-    def select_file_to_import(self, w):
-        # Show a "Please wait" pop-up window while checking the archive type
-        def show_please_wait_toast():
-            self.toast.set_title(title=_("Please wait …"))
-            self.toast.set_timeout(5)
-            self.toast_overlay.add_toast(self.toast)
+    def _begin_import_session(self):
+        if self.import_session is not None:
+            return None
+        self.import_session = object()
+        self.import_cancelled = False
+        self.stack.set_visible_child_name("importpage")
+        return self.import_session
 
-        # Check, if the archive is encrypted or not
-        def get_status_of_encryption():
-            try:
-                status = any(z.flag_bits & 0x1 for z in zipfile.ZipFile(self.path_to_import).infolist() if not z.filename.endswith("/"))
-            except:
-                status = False
-            if status == True:
-                GLib.idle_add(self.check_password_dialog)
-            else:
-                GLib.idle_add(self.import_config)
+    def _finish_import_session(self):
+        self.import_session = None
+        self.toast_overlay.dismiss_all()
+        self.stack.set_visible_child_name("importpage")
+        (Path(CACHE) / "temp_file").unlink(missing_ok=True)
 
-        # Get path from the dialog
-        def open_selected(source, res, data):
-            try:
-                file = source.open_finish(res)
-            except:
+    def _select_import(self, folder=False):
+        session = self._begin_import_session()
+        if session is None:
+            return
+
+        def selected(chooser, result, data):
+            if self.import_session is not session:
                 return
-            self.path_to_import = file.get_path()
-            show_please_wait_toast()
-            check_thread = Thread(target=get_status_of_encryption)
-            check_thread.start()
-
-        self.file_chooser = Gtk.FileDialog.new()
-        self.file_chooser.set_modal(True)
-        self.file_chooser.set_title(_("Import from file"))
-        self.file_filter = Gtk.FileFilter.new()
-        self.file_filter.set_name(_("Save Desktop files"))
-        self.file_filter.add_pattern('*.sd.tar.gz')
-        self.file_filter.add_suffix('zip')
-        self.file_filter_list = Gio.ListStore.new(Gtk.FileFilter);
-        self.file_filter_list.append(self.file_filter)
-        self.file_chooser.set_filters(self.file_filter_list)
-        self.file_chooser.open(self, None, open_selected, None)
-
-    # Select folder to import configuration
-    def select_folder_to_import(self, w):
-        def import_selected(source, res, data):
             try:
-                folder = source.select_folder_finish(res)
-            except:
+                entry = chooser.select_folder_finish(result) if folder else chooser.open_finish(result)
+            except GLib.Error:
+                self._finish_import_session()
                 return
-            self.path_to_import = folder.get_path()
+            self.path_to_import = entry.get_path()
+            if not self.path_to_import:
+                self._finish_import_session()
+                self.show_err_msg(_("The selected folder has no local filesystem path."))
+                return
+            if not folder and self.path_to_import.lower().endswith(".zip"):
+                try:
+                    with zipfile.ZipFile(self.path_to_import) as archive:
+                        encrypted = any(entry.flag_bits & 1 for entry in archive.infolist())
+                except (OSError, zipfile.BadZipFile):
+                    encrypted = False  # Archive inspection reports the structural error.
+                if encrypted:
+                    self.check_password_dialog()
+                    return
             self.import_config()
 
-        self.file_chooser = Gtk.FileDialog.new()
-        self.file_chooser.set_modal(True)
-        self.file_chooser.set_title(_("Import from folder"))
-        self.file_chooser.select_folder(self, None, import_selected, None)
+        self.file_chooser = Gtk.FileDialog(modal=True, title=_("Import from folder") if folder else _("Import from file"))
+        if folder:
+            self.file_chooser.select_folder(self, None, selected, None)
+        else:
+            file_filter = Gtk.FileFilter(name=_("Save Desktop files"))
+            file_filter.add_pattern("*.sd.tar.gz")
+            file_filter.add_suffix("zip")
+            filters = Gio.ListStore.new(Gtk.FileFilter)
+            filters.append(file_filter)
+            self.file_chooser.set_filters(filters)
+            self.file_chooser.open(self, None, selected, None)
+
+    def select_file_to_import(self, w):
+        self._select_import()
+
+    def select_folder_to_import(self, w):
+        self._select_import(folder=True)
 
     # Dialog for creating password for the config archive
     def create_password_dialog(self):
@@ -484,16 +494,15 @@ class MainWindow(Adw.ApplicationWindow):
         self.checkDialog = Adw.AlertDialog.new()
         self.checkDialog.set_heading(_("Unlock the archive with a password"))
         self.checkDialog.set_body(_("Enter the password below to unlock the archive with your configuration. If you have forgotten it, you will not be able to unzip the archive and start importing your configuration."))
-        self.checkDialog.choose(self, None, None, None)
         self.checkDialog.add_response("cancel", _("Cancel"))
         self.checkDialog.add_response("ok", _("Apply"))
         self.checkDialog.set_response_appearance('ok', Adw.ResponseAppearance.SUGGESTED)
         self.checkDialog.connect('response', self._checkDialog_closed)
-        self.checkDialog.present()
 
         self.checkEntry = Adw.PasswordEntryRow.new()
         self.checkEntry.set_title(_("Password"))
         self.checkDialog.set_extra_child(self.checkEntry)
+        self.checkDialog.present(self)
 
     # action after closing dialog for checking password
     def _checkDialog_closed(self, w, response):
@@ -503,6 +512,8 @@ class MainWindow(Adw.ApplicationWindow):
                 tmp.write(self.checkEntry.get_text())
 
             self.import_config()
+        else:
+            self._finish_import_session()
 
     # Save configuration
     def save_config(self):
@@ -539,28 +550,43 @@ class MainWindow(Adw.ApplicationWindow):
         self.done_desc = _("<big><b>{}</b></big>\nYou can log out of the system for the changes to take effect, or go back to the previous page and log out later.\n\n<i>If your archive contains Flatpak apps, they will start installing after the next login.</i>").format(_("The configuration has been applied!"))
 
         self.restore_options = {}
-        Thread(target=self._inspect_backup, daemon=True).start()
+        session = self.import_session
+        notice = Adw.Toast(title=_("Analyzing backup…"), timeout=0, button_label=_("Cancel"))
+        notice.connect("button-clicked", lambda _toast: self._finish_import_session() if self.import_session is session else None)
+        self.toast_overlay.add_toast(notice)
+        Thread(target=self._inspect_backup, args=(session, self.archive_name), daemon=True).start()
 
-    def _inspect_backup(self):
+    def _inspect_backup(self, session, archive_name):
         try:
             credentials = Path(CACHE) / "temp_file"
             password = credentials.read_text().strip() if credentials.is_file() else None
-            with prepare_backup(self.archive_name, password, parent=CACHE) as root:
+            with prepare_backup(archive_name, password, parent=CACHE) as root:
                 paths = [str(path.relative_to(root)) for path in root.rglob("*")]
                 folders = read_folder_metadata(root)
+                general = root / "General" if (root / "General").is_dir() else root
+                dump, wallpaper = split_wallpaper((general / "dconf-settings.ini").read_text(encoding="utf-8"))
+                available = {
+                    "wallpaper": bool(wallpaper) or any(path in paths for path in ("General/backgrounds", "General/wallpapers", "backgrounds", "wallpapers")),
+                    "configuration": filter_desktop_settings(dump, True) != filter_desktop_settings(dump, False)
+                    or any(path in paths for path in ("General/NemoDesktop.ini", "DE/nemo/desktop-metadata", "nemo/desktop-metadata")),
+                    "contents": any(path in paths for path in ("General/desktop-folder.tgz", "desktop-folder.tgz")),
+                }
         except (ValueError, OSError) as error:
-            GLib.idle_add(self._inspect_failed, str(error))
+            GLib.idle_add(self._inspect_failed, session, str(error))
         else:
-            GLib.idle_add(self._show_restore_items, paths, folders)
+            GLib.idle_add(self._show_restore_items, session, paths, folders, available)
 
-    def _inspect_failed(self, error):
+    def _inspect_failed(self, session, error):
+        if self.import_session is session:
+            self._finish_import_session()
+            self.show_err_msg(error)
+
+    def _show_restore_items(self, session, paths, folders, available):
+        if self.import_session is not session:
+            return
         self.toast_overlay.dismiss_all()
-        (Path(CACHE) / "temp_file").unlink(missing_ok=True)
-        self.show_err_msg(error)
-
-    def _show_restore_items(self, paths, folders):
         self.restore_folders = folders
-        self.items_dialog = itemsDialog(self, paths)
+        self.items_dialog = itemsDialog(self, paths, desktop_available=available)
         self.items_dialog.connect("response", self._on_items_dialog_response)
         self.items_dialog.present(self)
 
@@ -582,7 +608,7 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _finish_folder_plan(self, plan):
         if plan is None:
-            (Path(CACHE) / "temp_file").unlink(missing_ok=True)
+            self._finish_import_session()
             return
         self.restore_options["folders"] = plan
         self._start_gui()
@@ -603,20 +629,31 @@ class MainWindow(Adw.ApplicationWindow):
             stdin=subprocess.PIPE if options is not None else None,
             text=True, env={**os.environ, "PYTHONPATH": f"{app_prefix}"},
         )
+        if self.import_cancelled and options is not None:
+            self._kill_process()
         _, err = self.archive_proc.communicate(options)
+        GLib.idle_add(self._archive_finished, self.archive_proc.returncode, err.strip(), options is not None)
 
-        if self.archive_proc.returncode == 0:
-            GLib.idle_add(self.done)
-            if err.strip():
-                GLib.idle_add(self._show_restore_notice, err.strip())
-        elif self.archive_proc.returncode < 0 or self.archive_proc.returncode == 130:
-            print("Cancelled by user.")
+    def _archive_finished(self, status, message, restoring):
+        cancelled = restoring and self.import_cancelled
+        if restoring:
+            self._finish_import_session()
+        if cancelled or status < 0 or status == 130:
+            return
+        if status == 0:
+            if message and not restoring:
+                self.done_title = _("Backup created with warnings")
+                self.done_desc = _("The backup was created. Some data could not be saved.")
+            self.done()
+            if message:
+                self._show_restore_notice(message, restoring)
         else:
-            GLib.idle_add(self.show_err_msg, err)
-            GLib.idle_add(self._set_default_widgets_state)
+            self._set_default_widgets_state()
+            self.show_err_msg(message)
 
-    def _show_restore_notice(self, message):
-        dialog = Adw.AlertDialog.new(_("Backup notice"), message)
+    def _show_restore_notice(self, message, restoring):
+        heading = _("Backup notice") if restoring else _("Backup created with warnings")
+        dialog = Adw.AlertDialog.new(heading, message)
         dialog.add_response("close", _("Close"))
         dialog.present(self)
 
@@ -659,6 +696,8 @@ class MainWindow(Adw.ApplicationWindow):
 
     # Stop Saving/Importing Configuration
     def _cancel(self, w):
+        if self.import_session is not None:
+            self.import_cancelled = True
         self._kill_process()
         self._set_default_widgets_state()
         for widget in [self.spinner, self.cancel_button, self.status_page]:
@@ -771,6 +810,8 @@ class MainWindow(Adw.ApplicationWindow):
 
     # action after closing the main window
     def on_close(self, w):
+        if self.import_session is not None:
+            self._finish_import_session()
         self.close()
         self._kill_process()
 

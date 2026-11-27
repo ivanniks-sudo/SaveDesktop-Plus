@@ -1,3 +1,4 @@
+from gettext import translation
 import os
 from pathlib import Path
 import re
@@ -5,6 +6,9 @@ import shutil
 import stat
 import sys
 import tempfile
+
+
+_ = translation("savedesktop", localedir=os.getenv("SAVEDESKTOP_LOCALE"), fallback=True).gettext
 
 
 def portal_parts(path, mount):
@@ -185,7 +189,7 @@ def is_persistent_destination(path):
 def check_destination(value, *, probe_portal=False):
     path = Path(value)
     if not path.is_absolute() or not path.name or ".." in path.parts:
-        raise ValueError("Enter an absolute destination folder path.")
+        raise ValueError(_("Enter an absolute destination folder path."))
     try:
         # A user-selected path may legitimately contain a host symlink. The
         # restore plan carries the resolved path, so the copy never follows it.
@@ -196,11 +200,11 @@ def check_destination(value, *, probe_portal=False):
             except FileNotFoundError:
                 continue
             if not stat.S_ISDIR(info.st_mode):
-                raise ValueError(f"Destination is not a directory: {ancestor}")
+                raise ValueError(_("Destination is not a directory: {path}").format(path=ancestor))
             if not is_persistent_destination(ancestor):
                 raise ValueError(
-                    f"The sandbox cannot save to the host at {ancestor}. "
-                    "Use the folder chooser to grant access to the destination or its parent."
+                    _("The sandbox cannot save to the host at {path}. "
+                      "Use the folder chooser to grant access to the destination or its parent.").format(path=ancestor)
                 )
             from gi.repository import GLib
             granted = portal_parts(str(ancestor), Path(GLib.get_user_runtime_dir()) / "doc")
@@ -209,11 +213,11 @@ def check_destination(value, *, probe_portal=False):
                 with tempfile.TemporaryDirectory(prefix=".sdplus-write-", dir=ancestor):
                     pass
             elif not granted and not os.access(ancestor, os.W_OK | os.X_OK):
-                raise ValueError(f"Destination is not writable: {ancestor}")
+                raise ValueError(_("Destination is not writable: {path}").format(path=ancestor))
             return path
     except (OSError, RuntimeError) as error:
-        raise ValueError(f"Cannot access destination {value}: {error.strerror if isinstance(error, OSError) else error}") from error
-    raise ValueError("Destination is not accessible.")
+        raise ValueError(_("Cannot access destination {path}: {reason}").format(path=value, reason=getattr(error, "strerror", None) or error)) from error
+    raise ValueError(_("Destination is not accessible."))
 
 
 def destination_from_grant(requested, access, location):
@@ -235,7 +239,7 @@ def validate_folder_plan(entries, plan, *, probe_portal=False):
             raise ValueError(f"Unknown custom folder: {key}")
         path = check_destination(destination, probe_portal=probe_portal)
         if path in destinations:
-            raise ValueError(f"Multiple folders use the same destination: {path}")
+            raise ValueError(_("Multiple folders use the same destination: {path}").format(path=path))
         destinations.add(path)
         validated[key] = str(path)
     return validated
