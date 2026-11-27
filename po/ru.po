@@ -851,3 +851,15 @@ msgstr "Восстановить приложения Flatpak сейчас"
 
 msgid "Later"
 msgstr "Позже"
+
+msgid "Continue the remaining restoration in this session using the button below."
+msgstr "Чтобы завершить восстановление в текущем сеансе, воспользуйтесь кнопкой ниже."
+
+msgid "Apply in this session"
+msgstr "Применить в текущем сеансе"
+
+msgid "Set up current-session restoration"
+msgstr "Настройка восстановления в текущем сеансе"
+
+msgid "For first-time setup, open “SaveDesktop Plus — Apply pending restore” from your system menu."
+msgstr "Для первоначальной настройки откройте «SaveDesktop Plus — Применить восстановление» в системном меню."

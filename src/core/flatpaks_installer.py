@@ -10,7 +10,7 @@ import re
 import shutil
 import subprocess
 import sys
-from tempfile import TemporaryDirectory
+from tempfile import NamedTemporaryFile, TemporaryDirectory
 
 if __package__:
     from .backup_input import extract_tar, restore_tree
@@ -35,6 +35,8 @@ def desired_apps(source, excluded):
     desired = set()
     for filename, scope in zip(LISTS, SCOPES):
         path = source / filename
+        if path.is_symlink():
+            raise ValueError(f"Flatpak list cannot be a symbolic link: {filename}")
         if not path.is_file():
             continue
         for line in path.read_text(encoding="utf-8").splitlines():
@@ -63,9 +65,14 @@ def restore_lock(directory):
 
 
 def save_completed(workspace, completed):
-    temporary = workspace / "flatpak-completed.tmp"
-    temporary.write_text(json.dumps(sorted(completed)), encoding="utf-8")
-    temporary.replace(workspace / "flatpak-completed.json")
+    with NamedTemporaryFile(dir=workspace, delete=False, mode="w", encoding="utf-8") as stream:
+        temporary = Path(stream.name)
+        try:
+            json.dump(sorted(completed), stream)
+            stream.flush()
+            temporary.replace(workspace / "flatpak-completed.json")
+        finally:
+            temporary.unlink(missing_ok=True)
 
 
 def merge_app_data(sources, destination):
@@ -93,11 +100,16 @@ def merge_app_data(sources, destination):
 
 
 def restore(workspace, home):
-    prefs = json.loads((workspace / "flatpak-prefs.json").read_text(encoding="utf-8"))
+    preferences = workspace / "flatpak-prefs.json"
+    if preferences.is_symlink():
+        raise ValueError("Flatpak restore preferences cannot be a symbolic link")
+    prefs = json.loads(preferences.read_text(encoding="utf-8"))
     journal = workspace / "flatpak-completed.json"
+    section = workspace / "Flatpak_Apps"
+    if journal.is_symlink() or section.is_symlink():
+        raise ValueError("Flatpak restore state cannot contain symbolic links")
     done = set(json.loads(journal.read_text(encoding="utf-8"))) if journal.is_file() else set()
     excluded = set(prefs["disabled-flatpaks"]) | PROTECTED_APPS
-    section = workspace / "Flatpak_Apps"
     source = section if section.is_dir() else workspace
     install = prefs["install-flatpaks"]
     desired = desired_apps(source, excluded) if install else set()
@@ -130,6 +142,8 @@ def restore(workspace, home):
         with TemporaryDirectory(prefix="restore-apps-") as temporary:
             staging = Path(temporary)
             archive = source / "flatpak-apps-data.tgz"
+            if archive.is_symlink():
+                raise ValueError("Flatpak data archive cannot be a symbolic link")
             if archive.is_file():
                 extract_tar(archive, staging)
             entries = {}
@@ -176,25 +190,36 @@ def restore(workspace, home):
 
 
 def main():
-    workspace = Path(__file__).resolve().parent
     home = Path.home()
+    if "--current-session" in sys.argv[1:]:
+        workspace = home / ".var/app" / APP_ID / "cache/tmp/workspace"
+    else:
+        workspace = Path(__file__).resolve().parent
     autostart = home / ".config/autostart" / f"{APP_ID}.Flatpak.desktop"
     try:
+        if any(item.is_symlink() for item in (workspace, *workspace.parents)):
+            raise ValueError("Flatpak workspace cannot traverse a symbolic link")
         with restore_lock(workspace.parent):
             return restore_and_log(workspace, home, autostart)
     except BlockingIOError:
         print("A Flatpak restore is already running. Use the progress window to follow it.", file=sys.stderr)
         return 1
+    except (OSError, ValueError) as error:
+        print(f"Flatpak restore could not start: {error}", file=sys.stderr)
+        return 1
 
 
 def restore_and_log(workspace, home, autostart):
     finished = workspace / "flatpak-succeeded"
+    if finished.is_symlink():
+        raise ValueError("Flatpak result cannot be a symbolic link")
     if finished.exists():
         print("This Flatpak restore has already completed.")
         return 0
     log_path = workspace / "log.pipe"
     print(f"Flatpak restore log: {log_path}", flush=True)
-    with log_path.open("w", encoding="utf-8", buffering=1) as log:
+    descriptor = os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(descriptor, "w", encoding="utf-8", buffering=1) as log:
         # Also send the Flatpak subprocess output to the status window.
         sys.stdout.flush()
         os.dup2(log.fileno(), 1)
@@ -205,7 +230,8 @@ def restore_and_log(workspace, home, autostart):
                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             result = restore(workspace, home)
             if result == "success":
-                finished.touch()
+                with finished.open("x"):
+                    pass
                 autostart.unlink(missing_ok=True)
         except Exception as error:
             print(f"[ERROR] {error}", flush=True)

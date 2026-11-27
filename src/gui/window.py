@@ -678,6 +678,7 @@ class MainWindow(Adw.ApplicationWindow):
         self._finish_import_session()
         details = []
         self.flatpaks_pending = bool(completion.get("flatpaks_pending"))
+        self.session_restore_pending = bool(completion.get("nemo_pending") or self.flatpaks_pending)
         needs_sign_in = completion.get("cinnamon_shell") and not restart_requested
         if needs_sign_in:
             self.done_title = _("Restore finished. Sign in again to apply the remaining changes.")
@@ -687,8 +688,8 @@ class MainWindow(Adw.ApplicationWindow):
             details.append(_("Cinnamon restart requested. Open applications stay in the current session."))
         elif completion.get("cinnamon_shell"):
             details.append(_("Sign out and sign in again to reload Cinnamon."))
-        if completion.get("nemo_pending") or self.flatpaks_pending:
-            details.append(_("To continue in this session, open “SaveDesktop Plus — Apply pending restore” from your system menu."))
+        if self.session_restore_pending:
+            details.append(_("Continue the remaining restoration in this session using the button below."))
         if completion.get("nemo_pending"):
             details.append(_("If you defer the Nemo desktop layout, it will be applied at the next sign-in."))
         if not environment or environment["de_name"] != "Cinnamon":
@@ -807,6 +808,11 @@ class MainWindow(Adw.ApplicationWindow):
             self.open_folder_button.set_halign(Gtk.Align.CENTER)
             self.buttons_box.append(self.open_folder_button)
         elif self.archive_mode == "--unpack":
+            if getattr(self, "session_restore_pending", False):
+                apply_here = Gtk.Button(label=_("Apply in this session"), css_classes=["pill", "suggested-action"])
+                apply_here.set_halign(Gtk.Align.CENTER)
+                apply_here.connect("clicked", self._review_pending_restore)
+                self.buttons_box.append(apply_here)
             if getattr(self, "flatpaks_pending", False):
                 button = Gtk.Button(label=_("Copy Flatpak restore command"), css_classes=["pill"])
                 button.set_halign(Gtk.Align.CENTER)
@@ -822,6 +828,36 @@ class MainWindow(Adw.ApplicationWindow):
             self.logout_button.set_action_name("app.logout")
             if not (flatpak and self.environment == "Hyprland"):
                 self.buttons_box.append(self.logout_button)
+
+    def _review_pending_restore(self, button):
+        service = APP_ID + ".RestoreHost"
+        button.set_sensitive(False)
+
+        def finished(connection, result):
+            button.set_sensitive(True)
+            try:
+                connection.call_finish(result)
+            except GLib.Error as error:
+                print(f"Restore service: {error}", file=sys.stderr)
+                self._show_restore_service_setup()
+
+        try:
+            connection = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+        except GLib.Error as error:
+            print(f"Restore service: {error}", file=sys.stderr)
+            button.set_sensitive(True)
+            self._show_restore_service_setup()
+            return
+        connection.call(service, "/" + service.replace(".", "/"), service, "ReviewPendingRestore",
+                        None, None, Gio.DBusCallFlags.NONE, 5000, None, finished)
+
+    def _show_restore_service_setup(self):
+        notice = Adw.AlertDialog.new(
+            _("Set up current-session restoration"),
+            _("For first-time setup, open “SaveDesktop Plus — Apply pending restore” from your system menu."),
+        )
+        notice.add_response("close", _("Close"))
+        notice.present(self)
 
     def _back_to_main(self, w):
         self._set_default_widgets_state()

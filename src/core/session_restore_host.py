@@ -3,6 +3,7 @@ from gettext import translation
 import os
 from pathlib import Path
 import select
+import shutil
 import subprocess
 import sys
 from threading import Thread
@@ -14,6 +15,10 @@ from gi.repository import Gio, GLib
 APP_ID = "io.github.ivanniks_sudo.SaveDesktopPlus"
 NEMO_BUS = "org.NemoDesktop"
 ROOT = Path(__file__).resolve().parent
+HOME = Path.home()
+STATE = HOME / ".config" / APP_ID
+SERVICE = APP_ID + ".RestoreHost"
+OBJECT = "/" + SERVICE.replace(".", "/")
 _ = translation("savedesktop", localedir=ROOT / "locale", fallback=True).gettext
 
 
@@ -57,6 +62,8 @@ def desktop_process_fd(bus, name):
 
 
 def refresh_nemo(pending):
+    if str(ROOT) not in sys.path:
+        sys.path.insert(0, str(ROOT))
     from nemo_session_restore import NEMO_FILE, _apply_pending, pending_lock
 
     bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
@@ -64,6 +71,8 @@ def refresh_nemo(pending):
     if schema is None or not schema.has_key("show-desktop-icons"):
         raise RuntimeError("Nemo desktop settings are unavailable")
     settings = Gio.Settings.new_full(schema, None, None)
+    if any(path.is_symlink() for path in (pending.parent, *pending.parent.parents)):
+        raise ValueError("Nemo restore state cannot traverse a symbolic link")
     with pending_lock(pending.parent):
         if not pending.is_file():
             return
@@ -149,32 +158,107 @@ def apply_nemo(pending):
     waiting.destroy()
 
 
-def main():
-    global Gtk
-    gi.require_version("Gtk", "3.0")
-    from gi.repository import Gtk
+def install_host():
+    target = HOME / ".local/libexec" / APP_ID
+    service_dir = HOME / ".local/share/dbus-1/services"
+    if Path(GLib.get_user_data_dir()) != HOME / ".local/share":
+        raise RuntimeError("D-Bus activation requires the standard XDG data directory")
+    for destination in (target, service_dir):
+        if any(path.is_symlink() for path in (destination, *destination.parents)):
+            raise RuntimeError("A symbolic link prevents isolation of the restore service")
+    target.mkdir(parents=True, exist_ok=True)
+    for name in ("session_restore_host.py", "nemo_session_restore.py", "flatpaks_installer.py", "backup_input.py"):
+        temporary = target / (name + ".new")
+        shutil.copyfile(ROOT / name, temporary)
+        temporary.replace(target / name)
+    locale = ROOT / "locale"
+    if locale.is_dir():
+        shutil.copytree(locale, target / "locale", dirs_exist_ok=True)
+    service_dir.mkdir(parents=True, exist_ok=True)
+    helper = str(target / "session_restore_host.py")
+    service = service_dir / (SERVICE + ".service")
+    temp_service = service.with_suffix(".tmp")
+    temp_service.write_text(
+        f"[D-BUS Service]\nName={SERVICE}\nExec=/usr/bin/python3 -I {GLib.shell_quote(helper)} --dbus\n",
+        encoding="utf-8",
+    )
+    temp_service.replace(service)
+    try:
+        bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+        bus.call_sync("org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus",
+                      "ReloadConfig", None, None, Gio.DBusCallFlags.NONE, 1000, None)
+    except GLib.Error as error:
+        print(f"Refreshing session bus configuration: {error}", file=sys.stderr)
+    return helper
 
-    pending = ROOT / "nemo-desktop-pending.json"
-    flatpak_path = ROOT / "flatpak-workspace"
-    installer = None
-    if flatpak_path.is_file():
-        workspace = Path(flatpak_path.read_text(encoding="utf-8"))
-        candidate = workspace / "flatpaks_installer.py"
-        if candidate.is_file() and not (workspace / "flatpak-succeeded").exists():
-            installer = candidate
+
+def review():
+    pending = STATE / "nemo-desktop-pending.json"
+    workspace = HOME / ".var/app" / APP_ID / "cache/tmp/workspace"
+    installer = ROOT / "flatpaks_installer.py"
+    flatpaks_pending = (workspace / "flatpak-prefs.json").is_file() and not (workspace / "flatpak-succeeded").exists()
     if pending.is_file():
         if prompt(
             _("Applying the settings restarts the desktop. Make sure all copy and move operations have finished."),
             _("Apply now"), _("Apply at next sign-in"),
         ):
             apply_nemo(pending)
-    elif installer is None:
+    elif not flatpaks_pending:
         show_result(_("There is no pending SaveDesktop Plus restore."))
-    if installer and prompt(
+    if flatpaks_pending and prompt(
         _("Close the affected Flatpak apps and keep them closed while their data are being restored."),
         _("Restore Flatpak apps now"), _("Later"),
     ):
-        subprocess.Popen(("/usr/bin/python3", "-u", str(installer), "--show-progress"), start_new_session=True)
+        subprocess.Popen(("/usr/bin/python3", "-u", str(installer), "--current-session", "--show-progress"),
+                         start_new_session=True)
+
+
+def serve():
+    xml = f'<node><interface name="{SERVICE}"><method name="ReviewPendingRestore"/></interface></node>'
+    interface = Gio.DBusNodeInfo.new_for_xml(xml).interfaces[0]
+    loop = GLib.MainLoop()
+    reviewing = False
+
+    def show():
+        try:
+            review()
+        finally:
+            loop.quit()
+        return False
+
+    def request(connection, sender, path, iface, method, args, invocation):
+        nonlocal reviewing
+        invocation.return_value(None)
+        if not reviewing:
+            reviewing = True
+            GLib.idle_add(show)
+
+    def acquired(connection, _name):
+        connection.register_object(OBJECT, interface, request, None, None)
+
+    identifier = Gio.bus_own_name(Gio.BusType.SESSION, SERVICE, Gio.BusNameOwnerFlags.NONE,
+                                  acquired, None, lambda *_: loop.quit())
+    GLib.timeout_add_seconds(30, lambda: False if reviewing else loop.quit())
+    loop.run()
+    Gio.bus_unown_name(identifier)
+
+
+def main():
+    global Gtk
+    gi.require_version("Gtk", "3.0")
+    from gi.repository import Gtk
+
+    if "--bootstrap" in sys.argv[1:]:
+        try:
+            helper = install_host()
+        except (OSError, RuntimeError) as error:
+            print(f"Restore service setup: {error}", file=sys.stderr)
+        else:
+            os.execv("/usr/bin/python3", ("/usr/bin/python3", "-I", helper))
+    if "--dbus" in sys.argv[1:]:
+        serve()
+    else:
+        review()
 
 
 if __name__ == "__main__":

@@ -136,7 +136,7 @@ def create_flatpak_autostart(root):
     print("[OK] Created Flatpak autostart")
     return True
 
-def prepare_session_launcher(flatpaks_pending):
+def prepare_session_launcher():
     state = home / ".config" / APP_ID
     helper = state / "session_restore_host.py"
     launcher = home / ".local/share/applications" / f"{APP_ID}.RestoreHost.desktop"
@@ -149,21 +149,19 @@ def prepare_session_launcher(flatpaks_pending):
     argument = str(helper).replace("%", "%%")
     for char in ('\\', '"', '`', '$'):
         argument = argument.replace(char, '\\' + char)
-    entry.set_string(section, "Exec", f'/usr/bin/python3 "{argument}"')
+    entry.set_string(section, "Exec", f'/usr/bin/python3 -I "{argument}" --bootstrap')
     with tempfile.TemporaryDirectory(prefix="sdp-session-launcher-") as directory:
         staging = Path(directory)
         desktop_file = staging / launcher.name
         entry.save_to_file(str(desktop_file))
         restore_file(Path(__file__).with_name("session_restore_host.py"), helper)
+        for filename in ("nemo_session_restore.py", "flatpaks_installer.py", "backup_input.py"):
+            restore_file(Path(__file__).with_name(filename), state / filename)
         locale = os.environ.get("SAVEDESKTOP_LOCALE")
         if locale:
             catalogue = Path(locale) / "ru/LC_MESSAGES/savedesktop.mo"
             if catalogue.is_file():
                 restore_file(catalogue, state / "locale/ru/LC_MESSAGES/savedesktop.mo")
-        if flatpaks_pending:
-            pointer = staging / "flatpak-workspace"
-            pointer.write_text(str(Path(CACHE) / "workspace"), encoding="utf-8")
-            restore_file(pointer, state / pointer.name)
         restore_file(desktop_file, launcher)
 
 
@@ -500,7 +498,7 @@ class Import:
             monitors = [(geometry.width, geometry.height) for geometry in geometries]
             self.nemo_pending = queue_desktop_configuration(root, home / ".config", APP_ID, monitors)
         if self.flatpaks_pending or self.nemo_pending:
-            prepare_session_launcher(self.flatpaks_pending)
+            prepare_session_launcher()
 
     def import_dconf(self, dump):
         env = os.environ.copy()
