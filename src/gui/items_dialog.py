@@ -312,7 +312,7 @@ class itemsDialog(Adw.AlertDialog):
                 settings["save-bookmarks"] = self.switch_gtk.get_active()
             if settings["periodic-saving"] != "Never" and os.path.exists(f"{settings['periodic-saving-folder']}/{SYNC_METADATA}"):
                 create_savedesktop_json()
-            if flatpak:
+            if hasattr(self, "switch_05"):
                 settings["save-installed-flatpaks"] = self.switch_05.get_active()
                 settings["save-flatpak-data"] = self.switch_06.get_active()
                 settings["keep-flatpaks"] = self.switch_07.get_active()
