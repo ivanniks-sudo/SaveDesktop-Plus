@@ -5,13 +5,14 @@ from gi.repository import Adw, Gtk
 
 from savedesktop.globals import home, settings
 from savedesktop.gui.restore_folders_dialog import FolderDestinations
-from savedesktop.gui.restore_help import article_text, help_button
+from savedesktop.gui.restore_help import article_text, fit_restore_dialog, help_button
 
 
 class RestoreOptions(Adw.AlertDialog):
     def __init__(self, parent, archive, paths, folders, available, cinnamon, finished, needs_host):
         super().__init__(content_width=330)
         self.parent = parent
+        fit_restore_dialog(self, parent)
         self.finished = finished
         self.needs_host = needs_host
         self.cinnamon = cinnamon

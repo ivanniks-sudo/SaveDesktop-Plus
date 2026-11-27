@@ -32,6 +32,11 @@ def article_text(key):
     return _(ARTICLES[key])
 
 
+def fit_restore_dialog(dialog, parent):
+    if 0 < parent.get_width() < 480:
+        dialog.set_presentation_mode(Adw.DialogPresentationMode.BOTTOM_SHEET)
+
+
 def help_button(parent, key, title):
     label = _("Help: {parameter}").format(parameter=title)
     button = Gtk.Button(icon_name="help-contextual-symbolic", tooltip_text=label,
@@ -41,6 +46,7 @@ def help_button(parent, key, title):
     def show(_button):
         dialog = Adw.AlertDialog.new(title, article_text(key))
         dialog.set_content_width(320)
+        fit_restore_dialog(dialog, parent)
         dialog.add_response("close", _("Close help"))
         dialog.set_close_response("close")
         dialog.present(parent)
