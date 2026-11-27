@@ -78,3 +78,15 @@ class SessionRestore(unittest.TestCase):
 
         with patch("flatpaks_installer.restore", side_effect=verify):
             self.assertEqual(self.run_job(confirm, nemo=False), ("none", "done"))
+
+    def test_changes_after_host_approval_are_not_applied(self):
+        approved = self.protected / "approved"
+        approved.mkdir()
+        (approved / "desktop-metadata").write_bytes(self.pending.read_bytes() + b" ")
+        with (patch.object(host, "HOME", self.home), patch.object(host, "STATE", self.state),
+              patch.object(host, "refresh_nemo") as refresh):
+            with self.assertRaisesRegex(ValueError, "changed after confirmation"):
+                host.run_confirmed(self.job, True, False, lambda *_: True, lambda *_: None,
+                                   self.protected, approved=approved)
+            refresh.assert_not_called()
+        self.assertTrue(self.pending.exists())

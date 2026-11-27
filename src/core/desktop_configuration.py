@@ -49,7 +49,7 @@ def save_desktop_configuration(nemo_directory):
             data.save_to_file(ARCHIVE_FILE)
 
 
-def queue_desktop_configuration(root, config, app_id, monitors, job=None):
+def queue_desktop_configuration(root, config, app_id, monitors, job=None, *, prepare_to=None):
     for filename in (ARCHIVE_FILE, f"DE/nemo/{NEMO_FILE}", f"nemo/{NEMO_FILE}"):
         source = root / filename
         if source.is_symlink() or not source.is_file():
@@ -58,6 +58,10 @@ def queue_desktop_configuration(root, config, app_id, monitors, job=None):
         merge_desktop_metadata(read_keyfile(source), data)
         if not data.get_groups()[0]:
             continue
+        request = json.dumps({"metadata": data.to_data()[0], "monitors": monitors, "job": job})
+        if prepare_to is not None:
+            prepare_to.write_text(request, encoding="utf-8")
+            return True
         state = config / app_id
         helper = state / "nemo_session_restore.py"
         autostart = config / "autostart" / f"{app_id}.NemoDesktop.desktop"
@@ -78,7 +82,7 @@ def queue_desktop_configuration(root, config, app_id, monitors, job=None):
             desktop_file = staging / autostart.name
             entry.save_to_file(str(desktop_file))
             payload = staging / "nemo-desktop-pending.json"
-            payload.write_text(json.dumps({"metadata": data.to_data()[0], "monitors": monitors, "job": job}), encoding="utf-8")
+            payload.write_text(request, encoding="utf-8")
             restore_file(Path(nemo_session_restore.__file__), helper)
             with nemo_session_restore.pending_lock(state):
                 restore_file(desktop_file, autostart)

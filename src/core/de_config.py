@@ -64,7 +64,8 @@ def import_icons(root):
 def save_flatpak_data():
     blacklist = settings["disabled-flatpak-apps-data"]
 
-    cmd = ["tar", "-czf", "Flatpak_Apps/flatpak-apps-data.tgz", "--exclude=*/cache"]
+    cmd = ["tar", "-czf", "Flatpak_Apps/flatpak-apps-data.tgz", "--exclude=*/cache",
+           "--exclude=app/.savedesktop-plus-previous-*"]
 
     for app in blacklist:
         cmd.append(f"--exclude={app}")
@@ -88,7 +89,7 @@ def create_flatpak_list():
     export_flatpaks(f'{home}/.local/share/flatpak/app', 'Flatpak_Apps/installed_user_flatpaks.sh', 'user')
     print("[OK] Saving Flatpak app list")
 
-def create_flatpak_autostart(root, options=None):
+def create_flatpak_autostart(root, options=None, *, prepare_to=None):
     options = options or {}
     install = options.get("flatpak_apps", settings["save-installed-flatpaks"])
     copy_data = options.get("flatpak_data", settings["save-flatpak-data"])
@@ -117,11 +118,14 @@ def create_flatpak_autostart(root, options=None):
         with (staging / "flatpak-prefs.json").open("w") as prefs:
             json.dump({
                 "keep-flatpaks": keep,
-                "disabled-flatpaks": settings["disabled-flatpak-apps-data"],
+                "disabled-flatpaks": options.get("disabled_flatpaks", settings["disabled-flatpak-apps-data"]),
                 "install-flatpaks": install and any(path.name in lists for path in files),
                 "copy-data": copy_data and (copy_legacy or any(path.name in data for path in files)),
                 "job": options.get("job"),
             }, prefs)
+        if prepare_to is not None:
+            staging.rename(prepare_to)
+            return True
         entry = GLib.KeyFile()
         section = "Desktop Entry"
         entry.set_string(section, "Name", f"{APP_NAME} (Flatpak Apps installer)")
@@ -207,14 +211,16 @@ def save_desktop_folder():
     print("[OK] Saving Desktop folder")
 
 def import_desktop_folder(root):
+    conflicts = []
     archive = root / "desktop-folder.tgz"
     if archive.is_file() and not archive.is_symlink():
         if desktop_dir == home:
             raise ValueError("The desktop location is the whole home directory.")
-        restore_tar(archive, desktop_dir, single_folder=True)
+        restore_tar(archive, desktop_dir, single_folder=True, conflicts=conflicts)
         if not environment or environment["de_name"] != "Cinnamon":
             restore_optional(root / "gvfs-metadata", home / ".local/share/gvfs-metadata")
         print("[OK] Restored Desktop folder")
+    return conflicts
 
 
 # ------------------------
@@ -424,6 +430,43 @@ def restore_optional(source, destination, *, exclude=()):
         restore_tree(source, destination, exclude=exclude)
 
 
+def prepare_host_restore(root, options):
+    from uuid import UUID
+
+    job = options["job"]
+    if str(UUID(job)) != job:
+        raise ValueError("Invalid restore job")
+    staging = Path(CACHE) / "restore-jobs" / job
+    staging.mkdir(parents=True, mode=0o700)
+    nemo = False
+    apps = False
+    try:
+        if (environment and environment["de_name"] == "Cinnamon" and options.get("desktop_configuration")):
+            nemo = queue_nemo(root, options, prepare_to=staging / NEMO_FILE) or False
+        if options.get("flatpak_apps") or options.get("flatpak_data"):
+            apps = bool(create_flatpak_autostart(root, options, prepare_to=staging / "flatpak"))
+    except BaseException:
+        shutil.rmtree(staging)
+        raise
+    return {"nemo_pending": nemo, "flatpaks_pending": apps}
+
+
+def queue_nemo(root, options, *, prepare_to=None):
+    from gi.repository import Gdk
+
+    display = Gdk.Display.get_default() or Gdk.Display.open(None)
+    geometries = [monitor.get_geometry() for monitor in display.get_monitors()] if display else []
+    monitors = [(geometry.width, geometry.height) for geometry in geometries]
+    return queue_desktop_configuration(root, home / ".config", APP_ID, monitors, options.get("job"),
+                                       prepare_to=prepare_to)
+
+
+def log_conflicts(conflicts):
+    for path in conflicts:
+        print(f"[KEPT] Existing file or folder: {path}")
+
+
+
 class Import:
 
     def __init__(self, root, options, dump, wallpaper=""):
@@ -452,42 +495,51 @@ class Import:
                                 for path in protected):
                 raise ValueError(f"Custom restore destination overlaps a protected desktop location: {location}")
 
+        wallpaper_conflicts = []
+        personal_conflicts = []
         # General dirs (reverse copy)
         if restore_system:
             report_step("settings")
         for name, item in GENERAL_ITEMS.items():
-            enabled = restore_background if name == "backgrounds" else restore_system and settings[item["key"]]
+            enabled = restore_background if name == "backgrounds" else restore_system and options.get(item["key"], settings[item["key"]])
             if enabled:
                 for src, dst in item["dirs"]:
                     source = general / dst
                     if cinnamon and name in ("themes", "extensions") and source.is_dir():
                         self.cinnamon_shell = True
-                    restore_optional(source, src)
+                    if name == "backgrounds" and source.is_dir():
+                        restore_tree(source, src, conflicts=wallpaper_conflicts)
+                    else:
+                        restore_optional(source, src)
 
         for name, item in SPECIAL_ITEMS.items():
             if name in ("flatpaks", "flatpak-data"):
                 continue
-            enabled = restore_contents if name == "desktop" else restore_system and settings[item["key"]]
+            enabled = restore_contents if name == "desktop" else restore_system and options.get(item["key"], settings[item["key"]])
             if enabled:
                 if name == "desktop" and (general / "desktop-folder.tgz").is_file():
                     report_step("desktop_files")
-                    item["import"](general)
-                    report_step("desktop_files", "done")
+                    conflicts = item["import"](general)
+                    log_conflicts(conflicts)
+                    report_step("desktop_files", "partial" if conflicts else "done")
                 else:
                     item["import"](general)
         if plan:
             report_step("folders")
         for source, destination in plan.items():
-            restore_tree(root / source, Path(destination))
             location = host_destinations[source]
             spices = home / ".config/cinnamon/spices"
             if cinnamon and location and (Path(location).is_relative_to(spices) or
                                            spices.is_relative_to(location)):
                 self.cinnamon_shell = True
+                restore_tree(root / source, Path(destination))
+            else:
+                restore_tree(root / source, Path(destination), conflicts=personal_conflicts)
             print(f"[OK] Restored custom folder: {destination}")
 
         if plan:
-            report_step("folders", "done")
+            log_conflicts(personal_conflicts)
+            report_step("folders", "partial" if personal_conflicts else "done")
         if restore_system:
             report_step("settings")
         # DE configuration
@@ -510,7 +562,8 @@ class Import:
 
         if wallpaper and restore_background:
             report_step("wallpaper")
-            restored = restore_wallpaper(root, wallpaper, folders, plan, host_destinations, home, DATA)
+            restored = restore_wallpaper(root, wallpaper, folders, plan, host_destinations, home, DATA,
+                                         conflicts=personal_conflicts + wallpaper_conflicts)
             if restored:
                 dump += "\n" + restored
         if dump.strip():
@@ -520,7 +573,8 @@ class Import:
         if restore_system:
             report_step("settings", "done")
         if restore_background and (wallpaper or any((general / name).is_dir() for name in ("backgrounds", "wallpapers"))):
-            report_step("wallpaper", "done" if not wallpaper or restored else "failed")
+            log_conflicts(wallpaper_conflicts)
+            report_step("wallpaper", "partial" if wallpaper_conflicts else "done" if not wallpaper or restored else "failed")
         if options.get("flatpak_apps", settings["save-installed-flatpaks"]) or options.get("flatpak_data", settings["save-flatpak-data"]):
             self.flatpaks_pending = bool(create_flatpak_autostart(root, options))
             if not self.flatpaks_pending:
@@ -528,11 +582,7 @@ class Import:
                     if options.get(stage):
                         report_step(stage, "failed")
         if cinnamon and restore_configuration:
-            from gi.repository import Gdk
-            display = Gdk.Display.get_default() or Gdk.Display.open(None)
-            geometries = [monitor.get_geometry() for monitor in display.get_monitors()] if display else []
-            monitors = [(geometry.width, geometry.height) for geometry in geometries]
-            self.nemo_pending = queue_desktop_configuration(root, home / ".config", APP_ID, monitors, options.get("job"))
+            self.nemo_pending = queue_nemo(root, options)
         if restore_configuration and cinnamon and not self.nemo_pending and options.get("desktop_configuration"):
             report_step("desktop_layout", "done")
         if self.flatpaks_pending or self.nemo_pending:
@@ -541,6 +591,14 @@ class Import:
     def import_dconf(self, dump):
         env = os.environ.copy()
         payload = dump.encode("utf-8")
+        previous = subprocess.run(["dconf", "dump", "/"], capture_output=True, check=True).stdout
+        if previous:
+            recovery = Path(DATA) / "restore-recovery"
+            recovery.mkdir(mode=0o700, exist_ok=True)
+            with tempfile.NamedTemporaryFile(prefix="desktop-settings-", suffix=".ini", dir=recovery,
+                                             delete=False) as backup:
+                backup.write(previous)
+                print(f"[BACKUP] Previous desktop settings: {backup.name}")
         if flatpak:
             subprocess.run(["dconf", "load", "/"], input=payload, env=env, check=True)
         else:

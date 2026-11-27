@@ -2,6 +2,9 @@
 from collections import defaultdict, deque
 from contextlib import contextmanager
 from pathlib import Path, PurePosixPath
+import errno
+import filecmp
+import os
 import re
 import shutil
 import stat
@@ -286,7 +289,7 @@ def prepare_backup(source, password=None, *, parent=None):
         yield root
 
 
-def restore_tree(source, destination, *, exclude=()):
+def restore_tree(source, destination, *, exclude=(), conflicts=None):
     """Merge files without following existing links in destination directories."""
     if not isinstance(source, ZipPath):
         source = Path(source)
@@ -305,6 +308,12 @@ def restore_tree(source, destination, *, exclude=()):
                 continue
             name = relative / entry.name
             target = destination / name
+            if conflicts is not None and (target.is_symlink() or target.exists()):
+                if entry.is_symlink() and target.is_symlink() and entry.readlink() == target.readlink():
+                    continue
+                if target.is_symlink() or entry.is_dir() != target.is_dir() or entry.is_symlink():
+                    conflicts.append(target)
+                    continue
             if entry.is_symlink():
                 links[name] = entry.readlink()
             elif target.is_symlink():
@@ -312,7 +321,7 @@ def restore_tree(source, destination, *, exclude=()):
             elif entry.is_dir():
                 collect(entry, name)
             else:
-                restore_file(entry, target)
+                restore_file(entry, target, conflicts=conflicts)
 
     def lookup(name):
         if name in links:
@@ -326,15 +335,47 @@ def restore_tree(source, destination, *, exclude=()):
         existing = destination / name
         if existing.is_symlink() and existing.readlink() == target:
             continue
-        existing.symlink_to(target)
+        try:
+            existing.symlink_to(target)
+        except FileExistsError:
+            if conflicts is None:
+                raise
+            conflicts.append(existing)
 
 
-def restore_file(source, destination):
+def publish_new_file(temporary, destination):
+    try:
+        os.link(temporary, destination)
+    except OSError as error:
+        if error.errno not in (errno.EPERM, errno.EOPNOTSUPP, errno.EXDEV, errno.ENOSYS):
+            raise
+        # Document Portal and some filesystems do not support hard links.
+        # Exclusive creation still prevents replacing a concurrent write.
+        with temporary.open("rb") as source, destination.open("xb") as output:
+            created = os.fstat(output.fileno())
+            try:
+                shutil.copyfileobj(source, output)
+                output.flush()
+            except BaseException:
+                try:
+                    if os.path.samestat(created, destination.lstat()):
+                        destination.unlink()
+                except FileNotFoundError:
+                    pass
+                raise
+
+
+def restore_file(source, destination, *, conflicts=None):
     destination = Path(destination)
     if not isinstance(source, ZipPath):
         source = Path(source)
-    if source.is_symlink() or any(path.is_symlink() for path in (destination, *destination.parents)):
+    if source.is_symlink() or any(path.is_symlink() for path in destination.parents):
         raise ValueError(f"Symbolic link in file restore: {destination}")
+    if destination.is_symlink():
+        if conflicts is None:
+            raise ValueError(f"Symbolic link in file restore: {destination}")
+        conflicts.append(destination)
+        return
     destination.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(dir=destination.parent, delete=False) as output:
         temporary = Path(output.name)
@@ -343,12 +384,24 @@ def restore_file(source, destination):
             source.copy_to(temporary)
         else:
             shutil.copy2(source, temporary)
-        temporary.replace(destination)
+        if conflicts is None:
+            temporary.replace(destination)
+        else:
+            try:
+                publish_new_file(temporary, destination)
+            except FileExistsError:
+                try:
+                    same = (not destination.is_symlink() and destination.is_file() and
+                            filecmp.cmp(temporary, destination, shallow=False))
+                except OSError:
+                    same = False
+                if not same:
+                    conflicts.append(destination)
     finally:
         temporary.unlink(missing_ok=True)
 
 
-def restore_tar(source, destination, *, single_folder=False):
+def restore_tar(source, destination, *, single_folder=False, conflicts=None):
     with tempfile.TemporaryDirectory(prefix="restore-tar-") as temporary:
         staging = Path(temporary)
         if isinstance(source, ZipPath):
@@ -371,7 +424,7 @@ def restore_tar(source, destination, *, single_folder=False):
             if len(sections) != 1 or not sections[0].is_dir() or sections[0].is_symlink():
                 raise ValueError("Expected a single directory in the nested archive.")
             staging = sections[0]
-        restore_tree(staging, destination)
+        restore_tree(staging, destination, conflicts=conflicts)
 
 
 

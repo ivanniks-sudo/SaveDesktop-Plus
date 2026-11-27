@@ -10,7 +10,7 @@ import re
 import shutil
 import subprocess
 import sys
-from tempfile import NamedTemporaryFile, TemporaryDirectory
+from tempfile import NamedTemporaryFile, TemporaryDirectory, mkdtemp
 
 if __package__:
     from .backup_input import extract_tar, restore_tree
@@ -84,23 +84,30 @@ def merge_app_data(sources, destination):
     if any(item.is_symlink() for item in (destination, *destination.parents)):
         raise ValueError(f"Symbolic link in Flatpak data destination: {destination}")
     destination.parent.mkdir(parents=True, exist_ok=True)
-    with TemporaryDirectory(prefix=".sdplus-data-", dir=destination.parent) as staging:
-        pending = Path(staging) / "app"
+    # Keep the pre-restore tree in a private sibling directory. Exchange on
+    # the same filesystem preserves it even if the app has unwritten data.
+    previous = Path(mkdtemp(prefix=".savedesktop-plus-previous-", dir=destination.parent))
+    pending = previous / destination.name
+    keep_previous = False
+    try:
         if destination.exists():
-            # Retain independent user state and publish the merged tree in one rename.
             shutil.copytree(destination, pending, symlinks=True)
         for source in sources:
             restore_tree(source, pending)
         if destination.name in running_apps():
             return False
         if destination.exists():
-            # Linux RENAME_EXCHANGE prevents an interval with no live data directory.
             rename = ctypes.CDLL(None, use_errno=True).renameat2
             if rename(-100, os.fsencode(pending), -100, os.fsencode(destination), 2) != 0:
                 error = ctypes.get_errno()
                 raise OSError(error, os.strerror(error), str(destination))
+            keep_previous = True
+            print(f"[BACKUP] Previous data for {destination.name}: {pending}", flush=True)
         else:
             pending.rename(destination)
+    finally:
+        if not keep_previous:
+            shutil.rmtree(previous)
     return True
 
 

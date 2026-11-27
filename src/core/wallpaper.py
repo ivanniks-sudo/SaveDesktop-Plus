@@ -6,6 +6,7 @@ from pathlib import Path
 import re
 import shutil
 from urllib.parse import unquote, urlsplit
+from uuid import uuid4
 
 from gi.repository import GLib
 
@@ -80,7 +81,7 @@ def save_wallpaper(dump, folders):
     Path("General/Wallpaper.json").write_text(json.dumps(location, ensure_ascii=False), encoding="utf-8")
 
 
-def restore_wallpaper(root, settings, folders, plan, host_destinations, home, data_dir):
+def restore_wallpaper(root, settings, folders, plan, host_destinations, home, data_dir, *, conflicts=()):
     source = image_path(settings)
     if source is None:
         if "picture-uri=" in settings:
@@ -105,14 +106,21 @@ def restore_wallpaper(root, settings, folders, plan, host_destinations, home, da
                 except ValueError:
                     target = check_destination(str(Path(data_dir) / "wallpapers"))
                 from savedesktop.core.backup_input import restore_file
-                restore_file(image, target / name)
                 path = target / name
+                existing = []
+                restore_file(image, path, conflicts=existing)
+                if existing:
+                    path = target / f"{uuid4().hex}-{name}"
+                    restore_file(image, path)
         elif data.get("folder") in plan:
             relative = Path(data["relative"])
             if relative.is_absolute() or ".." in relative.parts:
                 raise ValueError("Invalid wallpaper path in backup.")
             access = Path(plan[data["folder"]])
             host = host_destinations[data["folder"]]
+            if any((access / relative).is_relative_to(item) for item in conflicts):
+                warn(_("Wallpaper was kept because a different image already exists at its destination."))
+                return ""
             if (access / relative).is_file():
                 if not host:
                     warn(_("Wallpaper was kept because the selected image folder has no known host path."))
@@ -134,6 +142,9 @@ def restore_wallpaper(root, settings, folders, plan, host_destinations, home, da
                     continue
                 access = Path(plan[key])
                 host = host_destinations[key]
+                if any((access / relative).is_relative_to(item) for item in conflicts):
+                    warn(_("Wallpaper was kept because a different image already exists at its destination."))
+                    return ""
                 if (access / relative).is_file():
                     if not host:
                         warn(_("Wallpaper was kept because the selected image folder has no known host path."))
@@ -150,6 +161,9 @@ def restore_wallpaper(root, settings, folders, plan, host_destinations, home, da
             else:
                 path = source
 
+    if path is not None and any(path.is_relative_to(item) for item in conflicts):
+        warn(_("Wallpaper was kept because a different image already exists at its destination."))
+        return ""
     if path is not None and portal_mount(path):
         path = None
     if path is None or not (copied or path.is_file()):

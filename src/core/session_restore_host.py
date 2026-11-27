@@ -24,7 +24,7 @@ HOME = Path.home()
 STATE = HOME / ".config" / APP_ID
 SERVICE = APP_ID + ".RestoreHost"
 OBJECT = "/" + SERVICE.replace(".", "/")
-PROTOCOL = 2
+PROTOCOL = 3
 BUILD = "4.1.0~preview.9"
 _ = translation("savedesktop", localedir=ROOT / "locale", fallback=True).gettext
 
@@ -240,7 +240,7 @@ def snapshot_flatpaks(workspace, snapshot, preferences):
             restore_file(source, snapshot / name)
 
 
-def run_confirmed(job, nemo, flatpaks, confirm, event, protected):
+def run_confirmed(job, nemo, flatpaks, confirm, event, protected, *, approved=None):
     from contextlib import nullcontext
     from flatpaks_installer import restore, restore_lock, save_completed
 
@@ -259,11 +259,17 @@ def run_confirmed(job, nemo, flatpaks, confirm, event, protected):
         prefs = current_request(prefs_path, job) if flatpaks else None
         metadata = current_request(pending, job) if nemo else None
         snapshot = Path(temporary)
+        if approved is not None:
+            if (nemo and metadata != read_request(approved / "desktop-metadata") or
+                    flatpaks and prefs != read_request(approved / "flatpak/flatpak-prefs.json")):
+                raise ValueError("The restore request changed after confirmation")
+            snapshot = approved / "flatpak"
         if flatpaks:
             if (workspace / "flatpak-succeeded").exists():
                 raise ValueError("Flatpak restore has already completed")
-            event("prepare_apps", "")
-            snapshot_flatpaks(workspace, snapshot, prefs)
+            if approved is None:
+                event("prepare_apps", "")
+                snapshot_flatpaks(workspace, snapshot, prefs)
         # This receipt lives outside every writable sandbox mount. Even a partial
         # failure cannot be re-executed by calling the service again with this ID.
         with (consumed / job).open("x"):
@@ -312,12 +318,41 @@ def confirm_restore(nemo, prefs):
         lines.append(_("Close apps whose data will be restored and keep them closed until the restore finishes."))
     if prefs.get("install-flatpaks") and not prefs.get("keep-flatpaks", True):
         lines.append(_("Flatpak apps absent from the backup may be uninstalled."))
-    return prompt("\n\n".join(lines), _("Apply"), _("At next sign-in"))
+    if nemo:
+        lines.insert(1, _("Desktop settings"))
+    if prefs.get("install-flatpaks"):
+        lines.insert(1, _("Restore apps"))
+    if prefs.get("copy-data"):
+        lines.insert(1, _("Restore app settings and data"))
+    return prompt("\n\n".join(lines), _("Apply"), _("Cancel"))
+
+
+def prepare_confirmation(job, nemo, flatpaks, destination):
+    if str(UUID(job)) != job or not (nemo or flatpaks):
+        raise ValueError("Invalid restore job")
+    if (ROOT / "confirmed-jobs" / job).exists():
+        raise ValueError("Restore job already processed")
+    source = HOME / ".var/app" / APP_ID / "cache/tmp/restore-jobs" / job
+    if nemo:
+        request = current_request(source / "desktop-metadata", job)
+        (destination / "desktop-metadata").write_bytes(request)
+    prefs = {}
+    if flatpaks:
+        raw_prefs = current_request(source / "flatpak/flatpak-prefs.json", job)
+        prefs = json.loads(raw_prefs)
+        (destination / "flatpak").mkdir()
+        snapshot_flatpaks(source / "flatpak", destination / "flatpak", raw_prefs)
+    return prefs
 
 
 def serve():
     xml = f"""<node><interface name="{SERVICE}">
       <method name="GetProtocol"><arg type="u" direction="out"/><arg type="s" direction="out"/></method>
+      <method name="AuthorizeRestore">
+        <arg type="s" direction="in"/><arg type="b" direction="in"/><arg type="b" direction="in"/>
+        <arg type="b" direction="out"/>
+      </method>
+      <method name="CancelRestore"><arg type="s" direction="in"/></method>
       <method name="StartRestore">
         <arg type="s" direction="in"/><arg type="b" direction="in"/><arg type="b" direction="in"/>
         <arg type="s" direction="out"/><arg type="s" direction="out"/>
@@ -327,60 +362,86 @@ def serve():
     interface = Gio.DBusNodeInfo.new_for_xml(xml).interfaces[0]
     loop = GLib.MainLoop()
     busy = False
+    authorization = None
+    timeout = 0
 
-    def request(connection, sender, path, iface, method, args, invocation):
-        nonlocal busy
-        if method == "GetProtocol":
-            invocation.return_value(GLib.Variant("(us)", (PROTOCOL, BUILD)))
-            return
-        if busy:
-            invocation.return_dbus_error(SERVICE + ".Busy", "A restore is already running")
-            return
-        busy = True
-        job, nemo, flatpaks = args.unpack()
+    with TemporaryDirectory(prefix="approved-", dir=ROOT) as directory:
+        snapshot = Path(directory)
 
-        def event(stage, detail):
-            # Limit individual diagnostic messages to keep the D-Bus payload bounded.
-            connection.emit_signal(sender, OBJECT, SERVICE, "Progress",
-                                   GLib.Variant("(sss)", (job, stage, detail[-60000:])))
+        def request(connection, sender, path, iface, method, args, invocation):
+            nonlocal busy, timeout
+            if method == "GetProtocol":
+                invocation.return_value(GLib.Variant("(us)", (PROTOCOL, BUILD)))
+                return
+            if method == "CancelRestore":
+                job, = args.unpack()
+                if not busy and authorization is not None and authorization[:2] == (sender, job):
+                    invocation.return_value(None)
+                    loop.quit()
+                else:
+                    invocation.return_dbus_error(SERVICE + ".Unauthorized", "There is no matching approval to cancel")
+                return
+            job, nemo, flatpaks = args.unpack()
+            identity = (sender, job, nemo, flatpaks)
+            if busy or (method == "AuthorizeRestore" and authorization is not None):
+                invocation.return_dbus_error(SERVICE + ".Busy", "A restore is already running")
+                return
+            if method == "StartRestore" and authorization != identity:
+                invocation.return_dbus_error(SERVICE + ".Unauthorized", "This request has not been approved")
+                return
+            if timeout:
+                GLib.source_remove(timeout)
+                timeout = 0
+            busy = True
 
-        def confirm(*components):
-            from threading import Event
-            answered = Event()
-            approved = False
+            def event(stage, detail):
+                connection.emit_signal(sender, OBJECT, SERVICE, "Progress",
+                                       GLib.Variant("(sss)", (job, stage, detail[-60000:])))
 
-            def show():
-                nonlocal approved
+            def reviewed(prefs):
+                nonlocal authorization, busy, timeout
                 try:
-                    approved = confirm_restore(*components)
-                finally:
-                    answered.set()
+                    approved = confirm_restore(nemo, prefs)
+                except Exception as error:
+                    event("log", str(error))
+                    approved = False
+                if approved:
+                    authorization = identity
+                    busy = False
+                    timeout = GLib.timeout_add_seconds(1800, loop.quit)
+                invocation.return_value(GLib.Variant("(b)", (approved,)))
+                if not approved:
+                    loop.quit()
                 return False
 
-            GLib.idle_add(show)
-            answered.wait()
-            return approved
+            def worker():
+                if method == "AuthorizeRestore":
+                    try:
+                        prefs = prepare_confirmation(job, nemo, flatpaks, snapshot)
+                    except Exception as error:
+                        invocation.return_dbus_error(SERVICE + ".InvalidJob", str(error))
+                        GLib.idle_add(loop.quit)
+                    else:
+                        GLib.idle_add(reviewed, prefs)
+                    return
+                try:
+                    result = run_confirmed(job, nemo, flatpaks, lambda *_: True, event, ROOT, approved=snapshot)
+                except Exception as error:
+                    event("log", str(error))
+                    result = ("deferred" if nemo else "none", "deferred" if flatpaks else "none")
+                invocation.return_value(GLib.Variant("(ss)", result))
+                GLib.idle_add(loop.quit)
 
-        def worker():
-            try:
-                result = run_confirmed(job, nemo, flatpaks, confirm, event, ROOT)
-            except Exception as error:
-                event("log", str(error))
-                result = ("deferred" if nemo else "none", "deferred" if flatpaks else "none")
-            invocation.return_value(GLib.Variant("(ss)", result))
-            GLib.idle_add(loop.quit)
+            Thread(target=worker, daemon=True).start()
 
-        Thread(target=worker, daemon=True).start()
+        def acquired(connection, _name):
+            connection.register_object(OBJECT, interface, request, None, None)
 
-    def acquired(connection, _name):
-        connection.register_object(OBJECT, interface, request, None, None)
-
-    identifier = Gio.bus_own_name(Gio.BusType.SESSION, SERVICE, Gio.BusNameOwnerFlags.NONE,
-                                  acquired, None, lambda *_: loop.quit())
-    GLib.timeout_add_seconds(30, lambda: False if busy else loop.quit())
-    loop.run()
-    Gio.bus_unown_name(identifier)
-
+        identifier = Gio.bus_own_name(Gio.BusType.SESSION, SERVICE, Gio.BusNameOwnerFlags.NONE,
+                                      acquired, None, lambda *_: loop.quit())
+        timeout = GLib.timeout_add_seconds(30, loop.quit)
+        loop.run()
+        Gio.bus_unown_name(identifier)
 
 def main():
     global Gtk

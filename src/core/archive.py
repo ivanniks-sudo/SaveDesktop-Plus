@@ -3,7 +3,7 @@ from gettext import translation
 from pathlib import Path
 from savedesktop.globals import *
 from savedesktop.core.password_store import PasswordStore
-from savedesktop.core.de_config import Save, Import
+from savedesktop.core.de_config import Save, Import, prepare_host_restore
 from savedesktop.core.backup_input import HOME_PATH, ZipPath, prepare_backup, publish_directory
 from savedesktop.core.wallpaper import split_wallpaper
 from savedesktop.core.operation_notices import warn
@@ -154,6 +154,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-c", "--create", help="Create archive", type=str)
     parser.add_argument("-u", "--unpack", help="Unpack archive", type=str)
+    parser.add_argument("--prepare-restore")
     parser.add_argument("--restore-options-stdin", action="store_true")
     args = parser.parse_args()
 
@@ -165,6 +166,9 @@ if __name__ == "__main__":
     try:
         if args.create:
             Create(args.create)
+        elif args.prepare_restore:
+            with prepare_backup(args.prepare_restore, password, parent=CACHE) as root:
+                report_completion(prepare_host_restore(root, json.load(sys.stdin)))
         elif args.unpack:
             Unpack(args.unpack, json.load(sys.stdin) if args.restore_options_stdin else None)
     except (ValueError, OSError, subprocess.CalledProcessError) as error:
