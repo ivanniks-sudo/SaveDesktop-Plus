@@ -755,3 +755,12 @@ msgstr "Папка назначения недоступна."
 
 msgid "Multiple folders use the same destination: {path}"
 msgstr "Для нескольких папок указано одно назначение: {path}"
+
+msgid "Wallpaper was kept because the selected image folder has no known host path."
+msgstr "Обои не изменены: не удалось определить путь к выбранной папке с изображением в основной системе."
+
+msgid "The original path is unavailable. The backup uses the folder granted by Document Portal."
+msgstr "Исходный путь неизвестен. Для резервной копии используется папка, доступ к которой предоставил системный портал."
+
+msgid "Some settings were skipped because they referenced temporary Document Portal paths."
+msgstr "Некоторые настройки пропущены, поскольку они ссылались на временные пути системного портала."

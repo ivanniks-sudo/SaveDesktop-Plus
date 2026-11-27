@@ -4,7 +4,6 @@ from pathlib import Path
 import re
 import shutil
 import stat
-import sys
 import tempfile
 
 
@@ -22,6 +21,16 @@ def portal_parts(path, mount):
     return None
 
 
+def portal_mount(path):
+    """Recognize both Flatpak's mount and the host portal's runtime mount."""
+    parts = Path(path).parts
+    if parts[:4] == ("/", "run", "flatpak", "doc"):
+        return Path("/run/flatpak/doc")
+    if parts[:3] == ("/", "run", "user") and len(parts) >= 5 and parts[3].isdigit() and parts[4] == "doc":
+        return Path(*parts[:5])
+    return None
+
+
 def access_path(saved_path):
     # Recover only the old SaveDesktop highlight around a document-portal path.
     # Ordinary absolute paths may contain literal angle brackets and ampersands.
@@ -34,15 +43,18 @@ def access_path(saved_path):
 
 
 def original_path(path, *, flatpak):
-    if not flatpak:
-        return path
-
     from gi.repository import Gio, GLib
 
-    mount = Path(GLib.get_user_runtime_dir()) / "doc"
+    mount = portal_mount(path)
+    if mount is None and flatpak:
+        runtime_mount = Path(GLib.get_user_runtime_dir()) / "doc"
+        if Path(path).is_relative_to(runtime_mount):
+            mount = runtime_mount
+    if mount is None:
+        return path
     document = portal_parts(path, mount)
     if not document:
-        return path
+        return None
 
     doc_id, exported_root, relative = document
     try:
@@ -63,7 +75,7 @@ def original_path(path, *, flatpak):
             return None
 
     resolved = Path(os.fsdecode(bytes(host).rstrip(b"\0")))
-    if resolved.is_absolute():
+    if resolved.is_absolute() and ".." not in resolved.parts and portal_mount(resolved) is None:
         return str(resolved.joinpath(*relative))
     return None
 
@@ -86,10 +98,9 @@ def save_custom_folders(folders, target, *, flatpak):
             raise CustomFolderCopyError(f"Cannot back up custom folder: {saved_path!r}. Select it again.")
         host = original_path(str(source), flatpak=flatpak)
         if host is None:
-            print(
-                f"Original path unavailable for {source}. Using the folder granted by Document Portal.",
-                file=sys.stderr,
-            )
+            from savedesktop.core.operation_notices import warn
+
+            warn(_("The original path is unavailable. The backup uses the folder granted by Document Portal."))
         try:
             # Avoid copying the staging directory into itself.
             staging = target.parent.resolve()
@@ -148,8 +159,11 @@ def read_folder_metadata(root):
                 member_path(relative)
             original = entry.get("original_path")
             if original is not None and (not isinstance(original, str) or not Path(original).is_absolute()
-                                         or ".." in Path(original).parts or re.match(r"^/run/user/\d+/doc/", original)):
+                                         or ".." in Path(original).parts):
                 raise ValueError("Invalid original folder path.")
+            if original and portal_mount(original):
+                # Older versions could store the sandbox mount as the source.
+                original = None
             entries[key].update({
                 "name": entry["name"] if isinstance(entry.get("name"), str) else entries[key]["name"],
                 "original_path": original, "home_relative": relative,
@@ -207,7 +221,8 @@ def check_destination(value, *, probe_portal=False):
                       "Use the folder chooser to grant access to the destination or its parent.").format(path=ancestor)
                 )
             from gi.repository import GLib
-            granted = portal_parts(str(ancestor), Path(GLib.get_user_runtime_dir()) / "doc")
+            mount = portal_mount(ancestor) or Path(GLib.get_user_runtime_dir()) / "doc"
+            granted = portal_parts(ancestor, mount)
             if granted and probe_portal:
                 # FUSE access() can disagree with actual write permissions.
                 with tempfile.TemporaryDirectory(prefix=".sdplus-write-", dir=ancestor):

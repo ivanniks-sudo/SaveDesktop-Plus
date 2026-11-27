@@ -398,8 +398,8 @@ class Import:
             if not restore_configuration:
                 protected.append(home / ".config/nemo" / NEMO_FILE)
 
-        for destination in plan.values():
-            location = original_path(destination, flatpak=flatpak)
+        host_destinations = {key: original_path(value, flatpak=flatpak) for key, value in plan.items()}
+        for location in host_destinations.values():
             if location and any(Path(location).is_relative_to(path) or path.is_relative_to(location)
                                 for path in protected):
                 raise ValueError(f"Custom restore destination overlaps a protected desktop location: {location}")
@@ -438,7 +438,7 @@ class Import:
             print(f"[WARN] Unknown DE: {environment_key}")
 
         if wallpaper and restore_background:
-            restored = restore_wallpaper(root, wallpaper, folders, plan, home, flatpak, DATA)
+            restored = restore_wallpaper(root, wallpaper, folders, plan, host_destinations, home, DATA)
             if restored:
                 dump += "\n" + restored
         self.import_dconf(dump)

@@ -13,6 +13,7 @@ from savedesktop.gui.restore_folders_dialog import RestoreFoldersDialog
 from savedesktop.core.backup_input import prepare_backup
 from savedesktop.core.custom_dirs import read_folder_metadata
 from savedesktop.core.desktop_configuration import filter_desktop_settings
+from savedesktop.core.operation_notices import operation_notices
 from savedesktop.core.wallpaper import split_wallpaper
 from savedesktop.gui.synchronization_dialogs import InitSetupDialog, SetDialog, CloudDialog
 
@@ -632,7 +633,11 @@ class MainWindow(Adw.ApplicationWindow):
         if self.import_cancelled and options is not None:
             self._kill_process()
         _, err = self.archive_proc.communicate(options)
-        GLib.idle_add(self._archive_finished, self.archive_proc.returncode, err.strip(), options is not None)
+        if err:
+            print(err, end="", file=sys.stderr)
+        status = self.archive_proc.returncode
+        message = err.strip() if status else operation_notices(err)
+        GLib.idle_add(self._archive_finished, status, message, options is not None)
 
     def _archive_finished(self, status, message, restoring):
         cancelled = restoring and self.import_cancelled

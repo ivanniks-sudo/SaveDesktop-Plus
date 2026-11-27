@@ -5,12 +5,12 @@ import json
 from pathlib import Path
 import re
 import shutil
-import sys
 from urllib.parse import unquote, urlsplit
 
 from gi.repository import GLib
 
-from savedesktop.core.custom_dirs import check_destination, original_path
+from savedesktop.core.operation_notices import warn
+from savedesktop.core.custom_dirs import check_destination, portal_mount
 
 _ = translation("savedesktop", localedir=os.getenv("SAVEDESKTOP_LOCALE"), fallback=True).gettext
 
@@ -63,13 +63,13 @@ def save_wallpaper(dump, folders):
         try:
             source = image.open("rb")
         except FileNotFoundError:
-            print(_("Wallpaper image is missing: {path}").format(path=image), file=sys.stderr)
+            warn(_("Wallpaper image is missing: {path}").format(path=image))
             return
         except PermissionError:
-            print(_("No permission to read wallpaper image: {path}").format(path=image), file=sys.stderr)
+            warn(_("No permission to read wallpaper image: {path}").format(path=image))
             return
         except OSError as error:
-            print(_("Cannot read wallpaper image {path}: {reason}").format(path=image, reason=error.strerror), file=sys.stderr)
+            warn(_("Cannot read wallpaper image {path}: {reason}").format(path=image, reason=error.strerror))
             return
         with source:
             directory = Path("General/Wallpaper")
@@ -80,11 +80,11 @@ def save_wallpaper(dump, folders):
     Path("General/Wallpaper.json").write_text(json.dumps(location, ensure_ascii=False), encoding="utf-8")
 
 
-def restore_wallpaper(root, settings, folders, plan, home, flatpak, data_dir):
+def restore_wallpaper(root, settings, folders, plan, host_destinations, home, data_dir):
     source = image_path(settings)
     if source is None:
         if "picture-uri=" in settings:
-            print(_("Wallpaper was kept because the saved image is unavailable."), file=sys.stderr)
+            warn(_("Wallpaper was kept because the saved image is unavailable."))
             return ""
         return settings
 
@@ -112,8 +112,11 @@ def restore_wallpaper(root, settings, folders, plan, home, flatpak, data_dir):
             if relative.is_absolute() or ".." in relative.parts:
                 raise ValueError("Invalid wallpaper path in backup.")
             access = Path(plan[data["folder"]])
-            host = original_path(str(access), flatpak=flatpak)
-            if host and (access / relative).is_file():
+            host = host_destinations[data["folder"]]
+            if (access / relative).is_file():
+                if not host:
+                    warn(_("Wallpaper was kept because the selected image folder has no known host path."))
+                    return ""
                 path = Path(host) / relative
                 copied = True
     else:
@@ -130,8 +133,11 @@ def restore_wallpaper(root, settings, folders, plan, home, flatpak, data_dir):
                 else:
                     continue
                 access = Path(plan[key])
-                host = original_path(str(access), flatpak=flatpak)
-                if host and (access / relative).is_file():
+                host = host_destinations[key]
+                if (access / relative).is_file():
+                    if not host:
+                        warn(_("Wallpaper was kept because the selected image folder has no known host path."))
+                        return ""
                     path = Path(host) / relative
                     copied = True
                     break
@@ -144,8 +150,10 @@ def restore_wallpaper(root, settings, folders, plan, home, flatpak, data_dir):
             else:
                 path = source
 
+    if path is not None and portal_mount(path):
+        path = None
     if path is None or not (copied or path.is_file()):
-        print(_("Wallpaper was kept because the saved image is unavailable."), file=sys.stderr)
+        warn(_("Wallpaper was kept because the saved image is unavailable."))
         return ""
     uri = GLib.Variant("s", path.as_uri()).print_(False)
     return re.sub(r"(?m)^picture-uri=.+$", lambda _: f"picture-uri={uri}", settings, count=1)

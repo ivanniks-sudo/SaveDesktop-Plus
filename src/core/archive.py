@@ -5,6 +5,7 @@ from savedesktop.core.password_store import PasswordStore
 from savedesktop.core.de_config import Save, Import
 from savedesktop.core.backup_input import HOME_PATH, ZipPath, prepare_backup, publish_directory
 from savedesktop.core.wallpaper import split_wallpaper
+from savedesktop.core.operation_notices import warn
 from savedesktop.core.desktop_configuration import filter_desktop_settings
 
 TEMP_CACHE = f"{CACHE}/workspace"
@@ -81,6 +82,12 @@ class Unpack:
                 if environment and environment["de_name"] == "Cinnamon":
                     dump, wallpaper = split_wallpaper(dump)
                     dump = filter_desktop_settings(dump, options.get("desktop_configuration", True))
+                unsafe_portal_value = re.compile(r"/run/(?:flatpak/doc|user/[0-9]+/doc)(?=/|['\"])")
+                retained = [line for line in dump.splitlines(keepends=True)
+                            if not ("=" in line and unsafe_portal_value.search(line))]
+                if len("".join(retained)) != len(dump):
+                    warn(_("Some settings were skipped because they referenced temporary Document Portal paths."))
+                dump = "".join(retained)
                 dump = HOME_PATH.sub(lambda _: str(home).encode("utf-8"), dump.encode("utf-8")).decode("utf-8")
                 if isinstance(root, ZipPath):
                     root.backup.home = home
