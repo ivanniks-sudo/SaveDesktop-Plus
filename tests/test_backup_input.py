@@ -70,7 +70,7 @@ class SelectiveZipRestore(unittest.TestCase):
         with zipfile.ZipFile(self.archive, "w") as archive:
             archive.writestr("General/dconf-settings.ini", "settings")
             archive.writestr(link, "../../outside")
-        with self.assertRaisesRegex(ValueError, "Unsafe backup path"):
+        with self.assertRaisesRegex(ValueError, "Symbolic link leaves"):
             with prepare_backup(self.archive):
                 self.fail("Unsafe link passed preflight")
 
@@ -86,3 +86,60 @@ class SelectiveZipRestore(unittest.TestCase):
         with prepare_backup(self.archive) as root:
             restore_tar(root / "General/desktop-folder.tgz", self.workspace / "desktop", single_folder=True)
         self.assertEqual((self.workspace / "desktop/example").read_bytes(), b"file")
+
+
+    def test_icon_theme_relative_links_in_zip_and_nested_tar(self):
+        link_name = "Theme/apps/22/application-menu.svg"
+        image_name = "Theme/actions/22/application-menu.svg"
+        target = "../../actions/22/application-menu.svg"
+        link = zipfile.ZipInfo("Custom_Dirs/icons/" + link_name)
+        link.create_system = 3
+        link.external_attr = (stat.S_IFLNK | 0o777) << 16
+        nested = io.BytesIO()
+        with tarfile.open(fileobj=nested, mode="w:gz") as archive:
+            image = tarfile.TarInfo("icons/" + image_name)
+            image.size = 3
+            archive.addfile(image, io.BytesIO(b"svg"))
+            alias = tarfile.TarInfo("icons/" + link_name)
+            alias.type = tarfile.SYMTYPE
+            alias.linkname = target
+            archive.addfile(alias)
+        with zipfile.ZipFile(self.archive, "w") as archive:
+            archive.writestr("General/dconf-settings.ini", "settings")
+            archive.writestr("General/icon-themes.tgz", nested.getvalue())
+            archive.writestr("Custom_Dirs/icons/" + image_name, b"svg")
+            archive.writestr(link, target)
+        with prepare_backup(self.archive) as root:
+            restore_tree(root / "Custom_Dirs/icons", self.workspace / "zip-icons")
+            restore_tar(root / "General/icon-themes.tgz", self.workspace / "tar-icons", single_folder=True)
+        for directory in ("zip-icons", "tar-icons"):
+            restored = self.workspace / directory / link_name
+            self.assertEqual(str(restored.readlink()), target)
+            self.assertEqual(restored.read_bytes(), b"svg")
+
+    def test_rejects_escape_through_existing_destination_chain(self):
+        with zipfile.ZipFile(self.archive, "w") as archive:
+            archive.writestr("General/dconf-settings.ini", "settings")
+            alias = zipfile.ZipInfo("Custom_Dirs/icons/Theme/alias")
+            alias.create_system = 3
+            alias.external_attr = (stat.S_IFLNK | 0o777) << 16
+            archive.writestr(alias, "redirect/application-menu.svg")
+        destination = self.workspace / "destination"
+        (destination / "Theme").mkdir(parents=True)
+        (destination / "Theme/redirect").symlink_to("../../outside")
+        with prepare_backup(self.archive) as root:
+            with self.assertRaisesRegex(ValueError, "Symbolic link leaves"):
+                restore_tree(root / "Custom_Dirs/icons", destination)
+        self.assertFalse((destination / "Theme/alias").is_symlink())
+
+    def test_rejects_archive_link_loop(self):
+        with zipfile.ZipFile(self.archive, "w") as archive:
+            archive.writestr("General/dconf-settings.ini", "settings")
+            for name, target in (("first", "second"), ("second", "first")):
+                alias = zipfile.ZipInfo("Custom_Dirs/icons/" + name)
+                alias.create_system = 3
+                alias.external_attr = (stat.S_IFLNK | 0o777) << 16
+                archive.writestr(alias, target)
+        with self.assertRaisesRegex(ValueError, "Symbolic link loop"):
+            with prepare_backup(self.archive):
+                self.fail("Cyclic archive link passed preflight")

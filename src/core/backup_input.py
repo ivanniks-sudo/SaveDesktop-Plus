@@ -1,5 +1,5 @@
 """Read SaveDesktop backups and safely copy selected entries."""
-from collections import defaultdict
+from collections import defaultdict, deque
 from contextlib import contextmanager
 from pathlib import Path, PurePosixPath
 import re
@@ -16,6 +16,38 @@ def member_path(name):
     if not path.parts or path.is_absolute() or ".." in path.parts or "\\" in name or ":" in path.parts[0] or "\0" in name:
         raise ValueError(f"Unsafe backup path: {name}")
     return path
+
+
+def check_link(parent, target, lookup):
+    """Resolve a relative target against the whole link graph inside one tree."""
+    def components(value):
+        text = str(value)
+        path = PurePosixPath(text)
+        if not text or path.is_absolute() or "\\" in text or "\0" in text or (
+            path.parts and ":" in path.parts[0]
+        ):
+            raise ValueError(f"Unsafe symbolic link target: {text}")
+        return path.parts
+
+    resolved = list(parent.parts)
+    pending = deque(components(target))
+    followed = 0
+    while pending:
+        part = pending.popleft()
+        if part == "..":
+            if not resolved:
+                raise ValueError(f"Symbolic link leaves the restore tree: {parent} -> {target}")
+            resolved.pop()
+            continue
+        resolved.append(part)
+        link = lookup(PurePosixPath(*resolved))
+        if link is not None:
+            followed += 1
+            if followed > 40:
+                raise ValueError(f"Symbolic link loop: {parent} -> {target}")
+            resolved.pop()
+            pending.extendleft(reversed(components(link)))
+    return PurePosixPath(*resolved)
 
 
 HOME_PATH = re.compile(br"""(?:/var)?/home/[^/\s'"\\<>]+(?=/|['"<>\s]|$)""")
@@ -50,7 +82,6 @@ class ZipBackup:
                 if entry.flag_bits & 1:
                     raise ValueError("Encrypted symbolic links are unsupported.")
                 link = self.read_small(entry, limit=4096).decode("utf-8")
-                member_path(link)
                 self.links[name] = link
             for part in (name, *name.parents):
                 if part.parts:
@@ -58,6 +89,8 @@ class ZipBackup:
         for name in directories:
             if name in self.entries and not self.entries[name].is_dir():
                 raise ValueError(f"Non-directory parent in backup: {name}")
+        for name, target in self.links.items():
+            check_link(name.parent, target, self.links.get)
         self.directories = directories
 
     def read_small(self, entry, *, limit=64 * 1024 * 1024):
@@ -162,24 +195,42 @@ def replace_home(path, home):
 
 
 def extract_tar(source, staging, *, fileobj=None):
+    links = {}
+    entries = set()
     with tarfile.open(source if fileobj is None else None, "r:*" if fileobj is None else "r|*", fileobj=fileobj) as archive:
         for item in archive:
             if item.name in (".", "./") and item.isdir():
                 continue
-            member_path(item.name)
-            if item.issym() or item.islnk():
-                member_path(item.linkname)
-            if not (item.isfile() or item.isdir() or item.issym()):
+            name = member_path(item.name)
+            if name in entries:
+                raise ValueError(f"Duplicate TAR entry: {name}")
+            entries.add(name)
+            if item.issym():
+                links[name] = item.linkname
+            elif item.isfile() or item.isdir():
+                archive.extract(item, staging, filter="data")
+            else:
                 raise ValueError(f"Unsupported TAR entry: {item.name}")
-            archive.extract(item, staging, filter="data")
+    for name in entries:
+        if any(parent in links for parent in name.parents):
+            raise ValueError(f"Symbolic-link parent in backup: {name}")
+    for name, target in links.items():
+        check_link(name.parent, target, links.get)
+    for name, target in links.items():
+        path = staging / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.symlink_to(target)
 
 
 def copy_backup(source, staging):
+    links = {}
     for entry in source.rglob("*"):
         if entry.is_symlink():
-            member_path(str(entry.readlink()))
+            links[PurePosixPath(entry.relative_to(source))] = entry.readlink()
         elif not (entry.is_file() or entry.is_dir()):
             raise ValueError(f"Unsupported backup entry: {entry.name}")
+    for name, target in links.items():
+        check_link(name.parent, target, links.get)
     shutil.copytree(source, staging, dirs_exist_ok=True, symlinks=True)
 
 
@@ -204,7 +255,19 @@ def prepare_backup(source, password=None, *, parent=None):
     if source.is_file() and source.name.lower().endswith(".zip"):
         try:
             with zipfile.ZipFile(source) as archive:
-                yield backup_root(ZipPath(ZipBackup(archive, source, password)))
+                index = ZipBackup(archive, source, password)
+                root = backup_root(ZipPath(index))
+                for name, target in index.links.items():
+                    if not name.is_relative_to(root.path):
+                        continue
+                    relative = name.relative_to(root.path)
+                    parts = relative.parts
+                    depth = 2 if len(parts) > 2 and parts[0] in ("General", "DE", "Custom_Dirs", "Flatpak_Apps") else 1
+                    component = root.path.joinpath(*parts[:depth])
+                    if name != component:
+                        check_link(name.relative_to(component).parent, target,
+                                   lambda path: index.links.get(component / path))
+                yield root
         except (OSError, zipfile.BadZipFile, tarfile.TarError, UnicodeError, NotImplementedError, RuntimeError, EOFError) as error:
             raise ValueError(f"Cannot process ZIP backup: {error}") from error
         return
@@ -230,25 +293,40 @@ def restore_tree(source, destination, *, exclude=()):
     if source.is_symlink():
         raise ValueError(f"Restore source is a symbolic link: {source}")
     destination = Path(destination)
-    if any(path.is_symlink() for path in (destination, *destination.parents)):
-        raise ValueError(f"Restore destination is a symbolic link: {destination}")
-    destination.mkdir(parents=True, exist_ok=True)
-    for entry in source.iterdir():
-        if entry.name in exclude:
+    links = {}
+
+    def collect(directory, relative, omitted=()):
+        target_dir = destination / relative
+        if any(path.is_symlink() for path in (target_dir, *target_dir.parents)):
+            raise ValueError(f"Restore destination is a symbolic link: {target_dir}")
+        target_dir.mkdir(parents=True, exist_ok=True)
+        for entry in directory.iterdir():
+            if entry.name in omitted:
+                continue
+            name = relative / entry.name
+            target = destination / name
+            if entry.is_symlink():
+                links[name] = entry.readlink()
+            elif target.is_symlink():
+                raise ValueError(f"Restore destination is a symbolic link: {target}")
+            elif entry.is_dir():
+                collect(entry, name)
+            else:
+                restore_file(entry, target)
+
+    def lookup(name):
+        if name in links:
+            return links[name]
+        existing = destination / name
+        return existing.readlink() if existing.is_symlink() else None
+
+    collect(source, PurePosixPath(), exclude)
+    for name, target in links.items():
+        check_link(name.parent, target, lookup)
+        existing = destination / name
+        if existing.is_symlink() and existing.readlink() == target:
             continue
-        target = destination / entry.name
-        if entry.is_symlink() and target.is_symlink() and entry.readlink() == target.readlink():
-            continue
-        if target.is_symlink():
-            raise ValueError(f"Restore destination is a symbolic link: {target}")
-        if entry.is_symlink():
-            link = entry.readlink()
-            member_path(str(link))
-            target.symlink_to(link)
-        elif entry.is_dir():
-            restore_tree(entry, target)
-        else:
-            restore_file(entry, target)
+        existing.symlink_to(target)
 
 
 def restore_file(source, destination):
