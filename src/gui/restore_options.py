@@ -207,7 +207,7 @@ class RestoreOptions(Adw.AlertDialog):
         if self.apps:
             self.app_expander.set_visible(self.selected("flatpak_apps") or self.selected("flatpak_data"))
         self.controls["keep_flatpaks"][0].set_sensitive(self.selected("flatpak_apps"))
-        for key, (button, _, available, row, article) in self.controls.items():
+        for key, (button, recommended, available, row, article) in self.controls.items():
             if key.startswith("save-"):
                 button.set_sensitive(available and self.selected("system_settings"))
             if available and key != "remember":
