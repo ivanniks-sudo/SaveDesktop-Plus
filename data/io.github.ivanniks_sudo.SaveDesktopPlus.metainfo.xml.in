@@ -67,6 +67,11 @@
     </screenshots>
           
     <releases>
+       <release type="development" version="4.1.0~preview.6" date="2026-11-27">
+          <description>
+            <p>Restore Cinnamon wallpaper with a host path and apply Nemo desktop metadata at the next sign-in.</p>
+          </description>
+       </release>
        <release type="development" version="4.1.0~preview.5" date="2026-11-27">
           <description>
             <p>Fix restore folder validation, icon theme links, and import dialog handling.</p>
