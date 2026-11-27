@@ -3,6 +3,7 @@ from gi.repository import GLib
 from savedesktop.globals import *
 from savedesktop.core.custom_dirs import enabled_folders, original_path, save_custom_folders, read_folder_metadata, validate_folder_plan
 from savedesktop.core.backup_input import publish_directory, restore_file, restore_tar, restore_tree
+from savedesktop.core.flatpaks_installer import restore_lock
 from savedesktop.core.restore_completion import affects_cinnamon_shell
 from savedesktop.core.wallpaper import save_wallpaper, restore_wallpaper
 from savedesktop.core.desktop_configuration import NEMO_FILE, save_desktop_configuration, queue_desktop_configuration
@@ -116,18 +117,21 @@ def create_flatpak_autostart(root):
                 "install-flatpaks": settings["save-installed-flatpaks"],
                 "copy-data": settings["save-flatpak-data"],
             }, prefs)
-        publish_directory(staging, workspace, Path(directory) / "previous")
-
-    # Create an autostart file for post-login Flatpak installation
-    os.makedirs(f"{home}/.config/autostart", exist_ok=True)
-    if not os.path.exists(f"{DATA}/savedesktop-synchronization.sh"):
-        with open(f"{home}/.config/autostart/{APP_ID}.Flatpak.desktop", "w") as f:
-            f.write(
-                "[Desktop Entry]\n"
-                f"Name={APP_NAME} (Flatpak Apps installer)\n"
-                "Type=Application\n"
-                f"Exec=sh -c \"flatpak run {APP_ID} --show-flatpaks-installer & python3 -u {CACHE}/workspace/flatpaks_installer.py > {CACHE}/workspace/log.pipe 2>&1\""
-            )
+        entry = GLib.KeyFile()
+        section = "Desktop Entry"
+        entry.set_string(section, "Name", f"{APP_NAME} (Flatpak Apps installer)")
+        entry.set_string(section, "Type", "Application")
+        argument = str(workspace / "flatpaks_installer.py").replace("%", "%%")
+        for char in ('\\', '"', '`', '$'):
+            argument = argument.replace(char, '\\' + char)
+        entry.set_string(section, "Exec", f'/usr/bin/python3 -u "{argument}" --show-progress')
+        autostart = home / ".config/autostart" / f"{APP_ID}.Flatpak.desktop"
+        desktop_file = Path(directory) / autostart.name
+        entry.save_to_file(str(desktop_file))
+        with restore_lock(workspace.parent):
+            publish_directory(staging, workspace, Path(directory) / "previous")
+            if not (Path(DATA) / "savedesktop-synchronization.sh").exists():
+                restore_file(desktop_file, autostart)
 
     print("[OK] Created Flatpak autostart")
     return True

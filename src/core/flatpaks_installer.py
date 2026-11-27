@@ -1,150 +1,215 @@
 #!/usr/bin/env python3
-import os, subprocess, shutil, json, time
+"""Apply a prepared Flatpak restore on the host, at login or on explicit request."""
+import contextlib
+import ctypes
+import fcntl
+import json
+import os
 from pathlib import Path
+import re
+import shutil
+import subprocess
+import sys
 from tempfile import TemporaryDirectory
 
-from backup_input import extract_tar, restore_tree
+if __package__:
+    from .backup_input import extract_tar, restore_tree
+else:
+    from backup_input import extract_tar, restore_tree
 
 APP_ID = "io.github.ivanniks_sudo.SaveDesktopPlus"
-UPSTREAM_ID = "io.github.vikdevelop.SaveDesktop"
-PROTECTED_APPS = {APP_ID, UPSTREAM_ID}
-CACHE_FLATPAK = f"{Path.home()}/.var/app/{APP_ID}/cache/tmp/workspace"
+PROTECTED_APPS = {APP_ID, "io.github.vikdevelop.SaveDesktop"}
+SCOPES = ("--system", "--user")
+LISTS = ("installed_flatpaks.sh", "installed_user_flatpaks.sh")
+FLATHUB = "https://dl.flathub.org/repo/flathub.flatpakrepo"
+APP = re.compile(r"[a-zA-Z_][\w-]*(?:\.[a-zA-Z_][\w-]*){2,}", re.ASCII)
 
-# Check Desktop Environment
-desktop_env = os.getenv("XDG_CURRENT_DESKTOP")
-if desktop_env in ['GNOME', 'ubuntu:GNOME', 'zorin:GNOME']:
-    environment = 'GNOME'
-else:
-    environment = None
 
-# Activate gsettings property
-if environment:
-    if not subprocess.getoutput("gsettings get org.gnome.shell disable-user-extensions") == "false":
-        os.system("gsettings set org.gnome.shell disable-user-extensions false")
-    
-# Check if the required directories exist in the cache directory
-if os.path.exists(CACHE_FLATPAK):
-    dest_dir = CACHE_FLATPAK
-else:
-    dest_dir = None
-   
-if dest_dir:
-    os.chdir(dest_dir)
-    with open("flatpak-prefs.json") as fl:
-        j = json.load(fl)
+def run(*args, capture=False):
+    result = subprocess.run(("flatpak", *args), text=True, check=True,
+                            stdout=subprocess.PIPE if capture else None)
+    return result.stdout if capture else None
 
-    copy_data = j["copy-data"]
-    install_flatpaks = j["install-flatpaks"]
-    disabled_flatpaks = j["disabled-flatpaks"]
-    keep_flatpaks = j["keep-flatpaks"]
 
-    # pre-calculation (math only, no actions)
-    desired_flatpaks = {}
-    if install_flatpaks:
-        files_to_check = ['Flatpak_Apps/installed_flatpaks.sh', 'Flatpak_Apps/installed_user_flatpaks.sh'] if os.path.exists("Flatpak_Apps") else ['installed_flatpaks.sh', 'installed_user_flatpaks.sh']
-        for file in files_to_check:
-            if os.path.exists(file):
-                with open(file, 'r') as f:
-                    for line in f.readlines():
-                        if 'flatpak' in line and 'install' in line:
-                            parts = line.split()
-                            app_id = next((p for p in parts if "." in p and not p.startswith("-")), None)
-                            if app_id and app_id != APP_ID and app_id not in disabled_flatpaks:
-                                desired_flatpaks[app_id] = "--user" if "--user" in parts else "--system"
+def desired_apps(source, excluded):
+    desired = set()
+    for filename, scope in zip(LISTS, SCOPES):
+        path = source / filename
+        if not path.is_file():
+            continue
+        for line in path.read_text(encoding="utf-8").splitlines():
+            parts = line.split()
+            if (len(parts) == 5 and parts[:3] == ["flatpak", "install", scope]
+                    and parts[-1] == "-y" and APP.fullmatch(parts[3])):
+                if parts[3] not in excluded:
+                    desired.add((scope, parts[3]))
+            elif line.strip() and not line.lstrip().startswith("#"):
+                raise ValueError(f"Unsupported Flatpak list entry in {filename}")
+    return desired
 
-    installed_apps = {}
-    for directory, method in [('/var/lib/flatpak/app', '--system'), (os.path.expanduser('~/.local/share/flatpak/app'), '--user')]:
-        if os.path.exists(directory):
-            for app in os.listdir(directory):
-                if os.path.isdir(os.path.join(directory, app)):
-                    installed_apps[app] = method
 
-    apps_to_install = {app: method for app, method in desired_flatpaks.items() if app not in installed_apps}
-    apps_to_remove = {}
-    if not keep_flatpaks:
-        apps_to_remove = {
-            app: method for app, method in installed_apps.items()
-            if app not in desired_flatpaks and app not in PROTECTED_APPS
-        }
+def running_apps():
+    return set(run("ps", "--columns=application", capture=True).split())
 
-    # Calculate exact total steps
-    total_steps = 0
-    if copy_data: total_steps += 1
-    if install_flatpaks: total_steps += len(apps_to_install)
-    if not keep_flatpaks:
-        total_steps += len(apps_to_remove)
-        total_steps += 1 # one extra step for orphaned dir cleanup
 
-    current_step = 0
+@contextlib.contextmanager
+def restore_lock(directory):
+    descriptor = os.open(directory / "flatpak-restore.lock", os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    try:
+        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        yield
+    finally:
+        os.close(descriptor)
 
-    def report_progress():
-        """Helper to print the hidden progress tag for the GTK UI"""
-        global current_step
-        current_step += 1
-        print(f"[PROGRESS] {current_step}/{total_steps}", flush=True)
 
-    if total_steps == 0:
-        print("There's no need to install any new apps, since they're all available on your system.", flush=True)
-    else:
-        # phase 2: execution
+def save_completed(workspace, completed):
+    temporary = workspace / "flatpak-completed.tmp"
+    temporary.write_text(json.dumps(sorted(completed)), encoding="utf-8")
+    temporary.replace(workspace / "flatpak-completed.json")
 
-        # Restore Data
-        if copy_data:
-            print("[COPY] Copying the Flatpak's user data to ~/.var/app", flush=True)
-            excluded = set(disabled_flatpaks) | PROTECTED_APPS
-            target = Path.home() / ".var/app"
-            archive_file = "Flatpak_Apps/flatpak-apps-data.tgz" if os.path.exists("Flatpak_Apps/flatpak-apps-data.tgz") else "flatpak-apps-data.tgz"
-            with TemporaryDirectory(prefix="restore-apps-") as temporary:
-                staging = Path(temporary)
-                if os.path.exists(archive_file):
-                    extract_tar(archive_file, staging)
-                for source in (Path("app"), staging / "app"):
-                    if source.is_dir() and not source.is_symlink():
-                        for entry in source.iterdir():
-                            if entry.name not in excluded:
-                                restore_tree(entry, target / entry.name)
-            print("✔ Copied Flatpak's user data", flush=True)
-            report_progress() # sends update to UI
 
-        # Install Apps
-        if install_flatpaks:
-            for app in desired_flatpaks:
-                if app in installed_apps:
-                    print(f"[INFO] {app} is already available in the system.", flush=True)
+def merge_app_data(sources, destination):
+    if any(item.is_symlink() for item in (destination, *destination.parents)):
+        raise ValueError(f"Symbolic link in Flatpak data destination: {destination}")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with TemporaryDirectory(prefix=".sdplus-data-", dir=destination.parent) as staging:
+        pending = Path(staging) / "app"
+        if destination.exists():
+            # Retain independent user state and publish the merged tree in one rename.
+            shutil.copytree(destination, pending, symlinks=True)
+        for source in sources:
+            restore_tree(source, pending)
+        if destination.name in running_apps():
+            return False
+        if destination.exists():
+            # Linux RENAME_EXCHANGE prevents an interval with no live data directory.
+            rename = ctypes.CDLL(None, use_errno=True).renameat2
+            if rename(-100, os.fsencode(pending), -100, os.fsencode(destination), 2) != 0:
+                error = ctypes.get_errno()
+                raise OSError(error, os.strerror(error), str(destination))
+        else:
+            pending.rename(destination)
+    return True
 
-            if apps_to_install:
-                print(f"Installing {len(apps_to_install)} new apps", flush=True)
-                for i, (app, method) in enumerate(apps_to_install.items(), start=1):
-                    print(f"↓ Installing {app} ({i}/{len(apps_to_install)})", flush=True)
-                    if method == '--user':
-                        os.system("flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo")
-                    subprocess.run(['flatpak', 'install', method, 'flathub', app, '-y'])
-                    print(f"✔ Finished installing {app}", flush=True)
-                    report_progress() # sends update to UI
 
-        # Remove Apps and Cleanup
-        if not keep_flatpaks:
-            for app, method in apps_to_remove.items():
-                print(f"[REMOVE] {method.title()} Flatpak: {app}", flush=True)
-                subprocess.run(['flatpak', 'uninstall', method, app, '--delete-data', '-y'])
-                report_progress() # <--- SEND UPDATE TO UI
+def restore(workspace, home):
+    prefs = json.loads((workspace / "flatpak-prefs.json").read_text(encoding="utf-8"))
+    journal = workspace / "flatpak-completed.json"
+    done = set(json.loads(journal.read_text(encoding="utf-8"))) if journal.is_file() else set()
+    excluded = set(prefs["disabled-flatpaks"]) | PROTECTED_APPS
+    section = workspace / "Flatpak_Apps"
+    source = section if section.is_dir() else workspace
+    install = prefs["install-flatpaks"]
+    desired = desired_apps(source, excluded) if install else set()
+    listed_scopes = {scope for filename, scope in zip(LISTS, SCOPES) if (source / filename).is_file()}
+    failures = []
+    deferred = []
 
-            print("[REMOVE] Cleaning up orphaned user data...", flush=True)
-            user_var_app = Path.home() / ".var/app"
-            if user_var_app.exists():
-                for app_dir in user_var_app.iterdir():
-                    if app_dir.is_dir() and app_dir.name not in desired_flatpaks and app_dir.name not in PROTECTED_APPS:
-                        print(f"  -> Deleted: {app_dir.name}", flush=True)
-                        shutil.rmtree(app_dir)
-            print("[OK] All useless apps and orphaned data have been removed", flush=True)
-            report_progress() # <--- SEND UPDATE TO UI
+    installed = {(scope, app) for scope in SCOPES
+                 for app in run("list", scope, "--app", "--columns=application", capture=True).split()
+                 if APP.fullmatch(app)}
+    missing = desired - installed
+    for scope, app in sorted(desired & installed):
+        print(f"[INFO] {app} is already available in the system.", flush=True)
+    for index, (scope, app) in enumerate(sorted(missing), 1):
+        print(f"↓ Installing {app} ({index}/{len(missing)})", flush=True)
+        try:
+            run("remote-add", scope, "--if-not-exists", "--noninteractive", "flathub", FLATHUB)
+            run("install", scope, "--noninteractive", "-y", "flathub", app)
+        except (OSError, subprocess.CalledProcessError) as error:
+            failures.append(f"{app} ({scope}): {error}")
+        else:
+            installed.add((scope, app))
+            print(f"✔ Finished installing {app}", flush=True)
+        if not prefs["copy-data"] and prefs["keep-flatpaks"]:
+            print(f"[PROGRESS] {index}/{len(missing)}", flush=True)
 
-        print("✔ All operations have been completed successfully.", flush=True)
+    unavailable = {app for _, app in desired - installed}
+    if prefs["copy-data"]:
+        print("[COPY] Copying the Flatpak's user data to ~/.var/app", flush=True)
+        with TemporaryDirectory(prefix="restore-apps-") as temporary:
+            staging = Path(temporary)
+            archive = source / "flatpak-apps-data.tgz"
+            if archive.is_file():
+                extract_tar(archive, staging)
+            entries = {}
+            for folder in (workspace / "app", staging / "app"):
+                if folder.is_dir() and not folder.is_symlink():
+                    for entry in folder.iterdir():
+                        if APP.fullmatch(entry.name) and entry.name not in excluded:
+                            entries.setdefault(entry.name, []).append(entry)
+            for app, folders in sorted(entries.items()):
+                if app in done:
+                    continue
+                if app in unavailable:
+                    deferred.append(app)
+                    continue
+                try:
+                    if app in running_apps() or not merge_app_data(folders, home / ".var/app" / app):
+                        deferred.append(app)
+                        continue
+                    done.add(app)
+                    save_completed(workspace, done)
+                    print(f"[DATA] {app}", flush=True)
+                except (OSError, ValueError, subprocess.CalledProcessError) as error:
+                    failures.append(f"{app}: {error}")
 
-else:
-    print("There's no need to install any new apps, since they're all available on your system.", flush=True)
+    if install and not prefs["keep-flatpaks"] and desired and not failures and not deferred:
+        for scope, app in sorted(installed - desired):
+            if scope not in listed_scopes or app in excluded or any(name == app for _, name in desired):
+                continue
+            try:
+                if app in running_apps():
+                    deferred.append(app)
+                    continue
+                print(f"[REMOVE] {scope} {app}", flush=True)
+                # Flatpak data are shared between installations. Keep the files for manual cleanup.
+                run("uninstall", scope, "--noninteractive", "-y", app)
+            except (OSError, subprocess.CalledProcessError) as error:
+                failures.append(f"{app} ({scope}): {error}")
 
-# Remove the autostart file after finishing the operations
-autostart_file = f"{Path.home()}/.config/autostart/{APP_ID}.Flatpak.desktop"
-if os.path.exists(autostart_file):
-    os.remove(autostart_file)
+    for error in failures:
+        print(f"[ERROR] {error}", flush=True)
+    for app in deferred:
+        print(f"[PENDING] {app}", flush=True)
+    return "partial" if failures or deferred else "success"
+
+
+def main():
+    workspace = Path(__file__).resolve().parent
+    home = Path.home()
+    autostart = home / ".config/autostart" / f"{APP_ID}.Flatpak.desktop"
+    try:
+        with restore_lock(workspace.parent):
+            return restore_and_log(workspace, home, autostart)
+    except BlockingIOError:
+        print("A Flatpak restore is already running. Use the progress window to follow it.", file=sys.stderr)
+        return 1
+
+
+def restore_and_log(workspace, home, autostart):
+    finished = workspace / "flatpak-succeeded"
+    if finished.exists():
+        print("This Flatpak restore has already completed.")
+        return 0
+    with (workspace / "log.pipe").open("w", encoding="utf-8", buffering=1) as log:
+        # Also send the Flatpak subprocess output to the status window.
+        sys.stdout.flush()
+        os.dup2(log.fileno(), 1)
+        os.dup2(log.fileno(), 2)
+        try:
+            if "--show-progress" in sys.argv[1:]:
+                subprocess.Popen(("flatpak", "run", APP_ID, "--show-flatpaks-installer"),
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            result = restore(workspace, home)
+            if result == "success":
+                finished.touch()
+                autostart.unlink(missing_ok=True)
+        except Exception as error:
+            print(f"[ERROR] {error}", flush=True)
+            result = "error"
+        print(f"[RESULT] {result}", flush=True)
+        return 0 if result == "success" else 1
+
+if __name__ == "__main__":
+    sys.exit(main())
