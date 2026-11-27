@@ -18,6 +18,10 @@ The original icon artwork by Brage Fuglseth is reused under [CC BY-SA 4.0](https
 SaveDesktop Plus is a cross-desktop tool to **back up, restore and sync your entire Linux desktop setup**.
 It can save your themes, icons, fonts, settings, wallpapers (even dynamic ones), Flatpak apps and user data – and bring them back in just a few clicks.
 
+## Product design
+
+[Project concept (Russian)](docs/PRODUCT-CONCEPT.ru.md) · [Interface wireframes (Russian)](docs/design/INTERFACE-WIREFRAMES.ru.pdf)
+
 ## Preview safety
 
 The fork preserves both SaveDesktop installations and their Flatpak data during its cleanup.
