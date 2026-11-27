@@ -33,7 +33,9 @@ def article_text(key):
 
 
 def fit_restore_dialog(dialog, parent):
-    if 0 < parent.get_width() < 480:
+    width = parent.get_width()
+    if 0 < width < 480:
+        dialog.set_content_width(max(160, width - 92))
         dialog.set_presentation_mode(Adw.DialogPresentationMode.BOTTOM_SHEET)
 
 

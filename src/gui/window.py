@@ -77,7 +77,7 @@ class MainWindow(Adw.ApplicationWindow):
 
         # A view container for the menu switcher
         self.stack = Adw.ViewStack(vexpand=True)
-        self.stack.set_hhomogeneous(True)
+        self.stack.set_hhomogeneous(False)
         self.headapp.append(self.stack)
 
         # Layout for saving and importing configuration
@@ -262,7 +262,6 @@ class MainWindow(Adw.ApplicationWindow):
         self.importPage.set_icon_name("package-x-generic")
         self.importPage.set_title(_("Import"))
         self.importPage.set_description(_("Import saved configuration"))
-        self.importPage.set_size_request(360, -1)
         self.importPage.set_child(self.btnBox)
         self.importBox.append(self.importPage)
 
@@ -1027,7 +1026,7 @@ class MainWindow(Adw.ApplicationWindow):
         self.status_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         self.status_box.set_vexpand(True)
         self.status_box.set_hexpand(True)
-        self.status_box.set_size_request(350, 100)
+        self.status_box.set_size_request(-1, 100)
         self.status_box.set_valign(Gtk.Align.CENTER)
         self.scrolled.set_child(self.status_box)
 
