@@ -1,15 +1,20 @@
 """Cinnamon/Nemo desktop settings, independent of files on the desktop."""
+import json
+from gettext import translation
+import os
 from pathlib import Path
-import re
 import tempfile
 
 from gi.repository import GLib
 
 from savedesktop.core.backup_input import restore_file
+from savedesktop.core.operation_notices import warn
+from savedesktop.core import nemo_session_restore
+from savedesktop.core.nemo_session_restore import NEMO_FILE, merge_desktop_metadata, read_keyfile
 
-NEMO_FILE = "desktop-metadata"
+_ = translation("savedesktop", localedir=os.getenv("SAVEDESKTOP_LOCALE"), fallback=True).gettext
+
 ARCHIVE_FILE = "General/NemoDesktop.ini"
-SYSTEM_ICONS = {"home", "computer", "trash", "network"}
 SHARED_SETTINGS = {
     "org/nemo/preferences": {"default-sort-order", "default-sort-in-reverse-order"},
     "org/nemo/icon-view": {"default-zoom-level", "captions"},
@@ -36,21 +41,6 @@ def filter_desktop_settings(dump, enabled):
     return "".join(lines)
 
 
-def read_keyfile(path):
-    data = GLib.KeyFile()
-    if path.is_file() and not path.is_symlink():
-        contents = path.read_text(encoding="utf-8")
-        data.load_from_data(contents, len(contents.encode("utf-8")), GLib.KeyFileFlags.KEEP_COMMENTS)
-    return data
-
-
-def merge_desktop_metadata(source, destination):
-    for group in source.get_groups()[0]:
-        if group in SYSTEM_ICONS or re.fullmatch(r"desktop-monitor-[0-9]+", group):
-            for key in source.get_keys(group)[0]:
-                destination.set_value(group, key, source.get_value(group, key))
-
-
 def save_desktop_configuration(nemo_directory):
     source = nemo_directory / NEMO_FILE
     if source.is_file():
@@ -60,16 +50,38 @@ def save_desktop_configuration(nemo_directory):
             data.save_to_file(ARCHIVE_FILE)
 
 
-def restore_desktop_configuration(root, nemo_directory):
+def queue_desktop_configuration(root, config, app_id, monitors):
     for filename in (ARCHIVE_FILE, f"DE/nemo/{NEMO_FILE}", f"nemo/{NEMO_FILE}"):
         source = root / filename
         if source.is_symlink() or not source.is_file():
             continue
-        destination = nemo_directory / NEMO_FILE
-        data = read_keyfile(destination)
+        data = GLib.KeyFile()
         merge_desktop_metadata(read_keyfile(source), data)
+        if not data.get_groups()[0]:
+            return
+        state = config / app_id
+        helper = state / "nemo_session_restore.py"
+        autostart = config / "autostart" / f"{app_id}.NemoDesktop.desktop"
+        entry = GLib.KeyFile()
+        section = "Desktop Entry"
+        entry.set_string(section, "Type", "Application")
+        entry.set_string(section, "Name", "SaveDesktop Plus (Nemo desktop configuration)")
+        entry.set_string(section, "OnlyShowIn", "X-Cinnamon;")
+        entry.set_string(section, "X-GNOME-Autostart-Phase", "Initialization")
+        entry.set_boolean(section, "NoDisplay", True)
+        # Desktop Exec quoting is distinct from shell quoting and keyfile escaping.
+        argument = str(helper).replace("%", "%%")
+        for char in ('\\', '"', '`', '$'):
+            argument = argument.replace(char, '\\' + char)
+        entry.set_string(section, "Exec", f'/usr/bin/python3 -I "{argument}"')
         with tempfile.TemporaryDirectory(prefix="nemo-desktop-") as temporary:
-            staged = Path(temporary) / NEMO_FILE
-            data.save_to_file(str(staged))
-            restore_file(staged, destination)
+            staging = Path(temporary)
+            desktop_file = staging / autostart.name
+            entry.save_to_file(str(desktop_file))
+            payload = staging / "nemo-desktop-pending.json"
+            payload.write_text(json.dumps({"metadata": data.to_data()[0], "monitors": monitors}), encoding="utf-8")
+            restore_file(Path(nemo_session_restore.__file__), helper)
+            restore_file(desktop_file, autostart)
+            restore_file(payload, state / payload.name)
+        warn(_("Nemo desktop layout will be applied the next time you sign in to Cinnamon."))
         return

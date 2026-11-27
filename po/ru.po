@@ -762,5 +762,8 @@ msgstr "Обои не изменены: не удалось определить
 msgid "The original path is unavailable. The backup uses the folder granted by Document Portal."
 msgstr "Исходный путь неизвестен. Для резервной копии используется папка, доступ к которой предоставил системный портал."
 
+msgid "Nemo desktop layout will be applied the next time you sign in to Cinnamon."
+msgstr "Расположение значков и параметры рабочего стола Nemo будут применены при следующем входе в Cinnamon."
+
 msgid "Some settings were skipped because they referenced temporary Document Portal paths."
 msgstr "Некоторые настройки пропущены, поскольку они ссылались на временные пути системного портала."

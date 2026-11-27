@@ -4,7 +4,7 @@ from savedesktop.globals import *
 from savedesktop.core.custom_dirs import enabled_folders, original_path, save_custom_folders, read_folder_metadata, validate_folder_plan
 from savedesktop.core.backup_input import publish_directory, restore_file, restore_tar, restore_tree
 from savedesktop.core.wallpaper import save_wallpaper, restore_wallpaper
-from savedesktop.core.desktop_configuration import NEMO_FILE, save_desktop_configuration, restore_desktop_configuration
+from savedesktop.core.desktop_configuration import NEMO_FILE, save_desktop_configuration, queue_desktop_configuration
 from pathlib import Path
 from datetime import date
 
@@ -395,8 +395,7 @@ class Import:
             protected.append(desktop_dir)
         if cinnamon:
             protected.append(home / ".local/share/gvfs-metadata")
-            if not restore_configuration:
-                protected.append(home / ".config/nemo" / NEMO_FILE)
+            protected.append(home / ".config/nemo" / NEMO_FILE)
 
         host_destinations = {key: original_path(value, flatpak=flatpak) for key, value in plan.items()}
         for location in host_destinations.values():
@@ -443,7 +442,11 @@ class Import:
                 dump += "\n" + restored
         self.import_dconf(dump)
         if cinnamon and restore_configuration:
-            restore_desktop_configuration(root, home / ".config/nemo")
+            from gi.repository import Gdk
+            display = Gdk.Display.get_default() or Gdk.Display.open(None)
+            geometries = [monitor.get_geometry() for monitor in display.get_monitors()] if display else []
+            monitors = [(geometry.width, geometry.height) for geometry in geometries]
+            queue_desktop_configuration(root, home / ".config", APP_ID, monitors)
         if settings["save-installed-flatpaks"] or settings["save-flatpak-data"]:
             create_flatpak_autostart(root)
 
