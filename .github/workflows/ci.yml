@@ -21,13 +21,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Test selective ZIP restore
-        run: PYTHONPATH=src/core python3 -m unittest discover -s tests -v
-
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y flatpak flatpak-builder appstream desktop-file-utils
+          sudo apt-get install -y flatpak flatpak-builder appstream desktop-file-utils python3-gi
+
+      - name: Test archive and restoration logic
+        run: PYTHONPATH=src/core /usr/bin/python3 -m unittest discover -s tests -v
 
       - name: Validate application metadata
         run: |
