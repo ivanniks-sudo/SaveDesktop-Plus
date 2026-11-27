@@ -1,5 +1,5 @@
 project('savedesktop-plus',
-          version: '4.1.0~preview.6',
+          version: '4.1.0~preview.7',
     meson_version: '>= 1.0.0',
   default_options: [ 'warning_level=2', 'werror=false', ],
 )

@@ -67,6 +67,11 @@
     </screenshots>
           
     <releases>
+       <release type="development" version="4.1.0~preview.7" date="2026-11-27">
+          <description>
+            <p>Request a Cinnamon restart after a successful X11 restore and explain pending changes.</p>
+          </description>
+       </release>
        <release type="development" version="4.1.0~preview.6" date="2026-11-27">
           <description>
             <p>Restore Cinnamon wallpaper with a host path and apply Nemo desktop metadata at the next sign-in.</p>
