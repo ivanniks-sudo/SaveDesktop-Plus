@@ -40,6 +40,7 @@ def help_button(parent, key, title):
 
     def show(_button):
         dialog = Adw.AlertDialog.new(title, article_text(key))
+        dialog.set_content_width(320)
         dialog.add_response("close", _("Close help"))
         dialog.set_close_response("close")
         dialog.present(parent)

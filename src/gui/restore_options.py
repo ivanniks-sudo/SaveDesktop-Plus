@@ -10,7 +10,7 @@ from savedesktop.gui.restore_help import article_text, help_button
 
 class RestoreOptions(Adw.AlertDialog):
     def __init__(self, parent, archive, paths, folders, available, cinnamon, finished, needs_host):
-        super().__init__(content_width=480)
+        super().__init__(content_width=330)
         self.parent = parent
         self.finished = finished
         self.needs_host = needs_host
@@ -131,7 +131,7 @@ class RestoreOptions(Adw.AlertDialog):
         for app in ids:
             selected = Gtk.CheckButton(active=app not in excluded, valign=Gtk.Align.CENTER)
             selected.update_property([Gtk.AccessibleProperty.LABEL], [app])
-            row = Adw.ActionRow(title=app, activatable_widget=selected)
+            row = Adw.ActionRow(title=app, title_lines=3, activatable_widget=selected)
             row.add_suffix(selected)
             listing.append(row)
             self.apps[app] = selected
@@ -158,7 +158,7 @@ class RestoreOptions(Adw.AlertDialog):
         switch = Gtk.CheckButton(active=bool(available and preference is True), sensitive=available,
                                  valign=Gtk.Align.CENTER)
         switch.update_property([Gtk.AccessibleProperty.LABEL], [title])
-        row = Adw.ActionRow(title=title)
+        row = Adw.ActionRow(title=title, title_lines=4, subtitle_lines=4)
         if not available:
             row.set_subtitle(_("Unavailable in this backup or on this desktop."))
         button = help_button(self.parent, article or key, title)
